@@ -1,0 +1,30 @@
+version: '3.8'
+services:
+  engine:
+    build: .
+    image: calarbot2:latest
+    command: ["/engine"]
+    volumes:
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+
+  simpleReply:
+    build: .
+    image: calarbot2:latest
+    command: ["/simpleReply"]
+    ports:
+      - "8080:8080"
+    environment:
+      - MODULE_PORT=8080
+      - MODULE_ORDER=1000
+
+  skazka:
+    build: .
+    image: calarbot2:latest
+    command: ["/skazka"]
+    ports:
+      - "8081:8080"
+    environment:
+      - MODULE_PORT=8080
+      - MODULE_ORDER=100
+    volumes:
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
