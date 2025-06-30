@@ -1,17 +1,17 @@
 # Build stage for engine
-FROM golang:1.23-alpine AS engine-builder
+FROM golang:1.22-alpine AS engine-builder
 WORKDIR /app
 COPY . .
 RUN cd engine && go build -o /engine
 
 # Build stage for simpleReply module
-FROM golang:1.23-alpine AS simplereply-builder
+FROM golang:1.22-alpine AS simplereply-builder
 WORKDIR /app
 COPY . .
 RUN cd modules/simpleReply && go build -o /simpleReply
 
 # Build stage for skazka module
-FROM golang:1.23-alpine AS skazka-builder
+FROM golang:1.22-alpine AS skazka-builder
 WORKDIR /app
 COPY . .
 RUN cd modules/skazka && go build -o /skazka

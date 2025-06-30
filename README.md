@@ -14,7 +14,7 @@ Calarbot2 is a Telegram bot written in Go, designed with a modular architecture.
 
 ### Prerequisites
 
-- Go 1.23 or higher
+- Go 1.22 or higher
 - Docker and Docker Compose (for containerized deployment)
 
 ### Configuration

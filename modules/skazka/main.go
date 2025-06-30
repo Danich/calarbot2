@@ -362,8 +362,7 @@ func randomElement(slice []string) string {
 }
 
 func main() {
-	// Initialize random seed
-	rand.Seed(time.Now().UnixNano())
+	// Random number generator is automatically seeded in Go 1.20+
 
 	// Create a new bot API client
 	token, err := os.ReadFile("/.tgtoken")
