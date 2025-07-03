@@ -11,12 +11,6 @@ import (
 	"calarbot2/common"
 )
 
-var includeModules = map[string]botModules.ModuleClient{
-	"simpleReply": {"http://simpleReply:8080"},
-	"skazka":      {"http://skazka:8080"},
-	"sber":        {"http://sber:8080"},
-}
-
 type Bot struct {
 	BotAPI    *tgbotapi.BotAPI
 	Flags     map[string]bool
