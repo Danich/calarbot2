@@ -1,0 +1,8 @@
+tgTokenFile: /.tgtoken
+modules:
+  simpleReply:
+    url: "http://simpleReply:8080"
+  skazka:
+    url: "http://skazka:8080"
+  "sber":
+    url: "http://sber:8080"
