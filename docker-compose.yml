@@ -5,7 +5,8 @@ services:
     image: calarbot2:latest
     command: ["/engine"]
     volumes:
-      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+      - /Users/danichk/.tgtoken:/.tgtoken
+#      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
 
   simpleReply:
     build: .
@@ -27,4 +28,27 @@ services:
       - MODULE_PORT=8080
       - MODULE_ORDER=100
     volumes:
-      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+      - /Users/danichk/.tgtoken:/.tgtoken
+#      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+
+  sberify-service:
+    build: ./sberify-service
+    image: sberify-service:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+    restart: always
+
+  sber:
+    build: .
+    image: calarbot2:latest
+    command: ["/sber"]
+    ports:
+      - "8082:8080"
+    environment:
+      - MODULE_PORT=8080
+      - MODULE_ORDER=500
+      - SBERIFY_URL=http://sberify-service:5000/sberify
+    depends_on:
+      - sberify-service
