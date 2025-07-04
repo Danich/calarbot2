@@ -36,6 +36,7 @@ COPY --from=simplereply-builder /simpleReply /simpleReply
 COPY --from=skazka-builder /skazka /skazka
 COPY --from=sber-builder /sber /sber
 COPY --from=ai-builder /aiAnswer /aiAnswer
+RUN chmod +x /engine /simpleReply /skazka /sber /aiAnswer
 
 # Expose default ports (can be overridden in docker-compose)
 EXPOSE 8080
