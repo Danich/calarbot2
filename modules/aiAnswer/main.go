@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -28,6 +29,9 @@ type AIConfig struct {
 	Url         string `yaml:"url"`
 	Token       string `yaml:"token"`
 	AnswerLevel int    `yaml:"answer_level"`
+	ReplyWeight int    `yaml:"reply_weight"`
+	CallWeight  int    `yaml:"call_weight"`
+	BotUsername string `yaml:"bot_username"`
 }
 
 func (m Module) Order() int {
@@ -39,6 +43,10 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 		return false
 	}
 	roll := rand.Intn(DiceSize + 1)
+	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.UserName == m.aiConfig.BotUsername {
+		roll = roll + m.aiConfig.ReplyWeight
+	}
+
 	fmt.Printf("Dice rolled: %d\n", roll)
 	return roll >= m.aiConfig.AnswerLevel
 }
@@ -78,4 +86,8 @@ func main() {
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 	}
+}
+
+func containsAtUsername(text, username string) bool {
+	return strings.Contains(text, "@"+username)
 }

@@ -62,7 +62,7 @@ func (b *Bot) RunBot() {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message != nil { // If we got a message
+		if update.Message != nil && !update.Message.From.IsBot { // If we got a message
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 			// Find the module that should handle this message
