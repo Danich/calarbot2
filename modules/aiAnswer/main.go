@@ -1,4 +1,4 @@
-package aiAnswer
+package main
 
 import (
 	"context"
