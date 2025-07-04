@@ -20,7 +20,7 @@ func (m Module) Answer(msg *botModules.Payload) (string, error) {
 }
 
 func main() {
-	order := 1000
+	order := 9999
 	if len(os.Args) > 1 {
 		_, _ = fmt.Sscanf(os.Args[1], "%d", &order)
 	}

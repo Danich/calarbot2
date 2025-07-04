@@ -1,8 +1,12 @@
 package main
 
+import "calarbot2/common"
+
+const configPath = "/calarbot.yaml"
+
 func main() {
 	config := &CalarbotConfig{}
-	err := config.Read()
+	err := common.ReadConfig(configPath, config)
 	if err != nil {
 		panic(err)
 	}
