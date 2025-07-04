@@ -44,10 +44,15 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 	}
 	roll := rand.Intn(DiceSize + 1)
 	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.UserName == m.aiConfig.BotUsername {
+		fmt.Printf("Reply to my message, roll: %d\n", roll)
 		roll = roll + m.aiConfig.ReplyWeight
 	}
+	if msg.From != nil && containsAtUsername(msg.Text, m.aiConfig.BotUsername) {
+		fmt.Printf("Message contains @%s, roll: %d\n", m.aiConfig.BotUsername, roll)
+		roll = roll + m.aiConfig.CallWeight
+	}
 
-	fmt.Printf("Dice rolled: %d\n", roll)
+	fmt.Printf("Total rolled: %d\n", roll)
 	return roll >= m.aiConfig.AnswerLevel
 }
 
