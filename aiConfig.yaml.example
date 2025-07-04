@@ -1,4 +1,7 @@
 name: openai
+bot_username: calarbot
 url: "https://api.openai.com/v1/"
 token: ...
 answer_level: 980
+call_weight: 200
+reply_weight: 200
