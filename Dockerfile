@@ -22,7 +22,7 @@ WORKDIR /app
 COPY . .
 RUN cd modules/sber && go build -o /sber
 
-# Build stage for sber module
+# Build stage for ai module
 FROM golang:1.22-alpine AS ai-builder
 WORKDIR /app
 COPY . .
@@ -35,7 +35,7 @@ COPY --from=engine-builder /engine /engine
 COPY --from=simplereply-builder /simpleReply /simpleReply
 COPY --from=skazka-builder /skazka /skazka
 COPY --from=sber-builder /sber /sber
-COPY --from=sber-builder /aiAnswer /aiAnswer
+COPY --from=ai-builder /aiAnswer /aiAnswer
 
 # Expose default ports (can be overridden in docker-compose)
 EXPOSE 8080
