@@ -16,8 +16,8 @@ type CalarbotConfig struct {
 
 type ModulesConfig struct {
 	//Name      string `yaml:"name"`
-	Url       string `yaml:"url"`
-	EnabledOn []int  `yaml:"enabled_on,omitempty"`
+	Url       string  `yaml:"url"`
+	EnabledOn []int64 `yaml:"enabled_on,omitempty"`
 }
 
 func (c *CalarbotConfig) Read() error {
