@@ -6,3 +6,5 @@ modules:
     url: "http://skazka:8080"
   "sber":
     url: "http://sber:8080"
+  "aiAnswer":
+    url: "http://aiAnswer:8080"
