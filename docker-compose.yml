@@ -5,8 +5,8 @@ services:
     image: calarbot2:latest
     command: ["/engine"]
     volumes:
-      - /Users/danichk/.tgtoken:/.tgtoken
-#      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+      - /opt/calarbot/calarbot.yaml:/calarbot.yaml
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
 
   simpleReply:
     build: .
@@ -28,8 +28,7 @@ services:
       - MODULE_PORT=8080
       - MODULE_ORDER=100
     volumes:
-      - /Users/danichk/.tgtoken:/.tgtoken
-#      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
 
   sberify-service:
     build: ./sberify-service
