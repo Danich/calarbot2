@@ -66,7 +66,7 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 	}
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage(fmt.Sprintf("Message from %s in %ы:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
+			openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
 		},
 		Model: openai.ChatModelGPT4_1,
 	})
