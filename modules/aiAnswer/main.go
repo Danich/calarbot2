@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -47,7 +46,7 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 		fmt.Printf("Reply to my message, roll: %d\n", roll)
 		roll = roll + m.aiConfig.ReplyWeight
 	}
-	if msg.From != nil && containsAtUsername(msg.Text, m.aiConfig.BotUsername) {
+	if msg.Entities != nil && common.Contains(extractMentions(msg), "@"+m.aiConfig.BotUsername) {
 		fmt.Printf("Message contains @%s, roll: %d\n", m.aiConfig.BotUsername, roll)
 		roll = roll + m.aiConfig.CallWeight
 	}
@@ -63,7 +62,7 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 	)
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage("User asked for"),
+			openai.UserMessage(fmt.Sprintf("Message from %s:\n'%s'", payload.Msg.From.UserName, payload.Msg.Text)),
 		},
 		Model: openai.ChatModelGPT4o,
 	})
@@ -93,6 +92,10 @@ func main() {
 	}
 }
 
-func containsAtUsername(text, username string) bool {
-	return strings.Contains(text, "@"+username)
+func extractMentions(msg *tgbotapi.Message) []string {
+	var mentions []string
+	for _, entity := range msg.Entities {
+		mentions = append(mentions, msg.Text[entity.Offset:entity.Offset+entity.Length])
+	}
+	return mentions
 }

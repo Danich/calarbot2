@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -12,10 +14,11 @@ import (
 )
 
 type Bot struct {
-	BotAPI    *tgbotapi.BotAPI
-	Flags     map[string]bool
-	Modules   map[string]*botModules.ModuleClient
-	BotConfig *CalarbotConfig
+	BotAPI         *tgbotapi.BotAPI
+	Flags          map[string]bool
+	Modules        map[string]*botModules.ModuleClient
+	BotConfig      *CalarbotConfig
+	orderedModules []string
 }
 
 func readToken(filename string) (string, error) {
@@ -45,11 +48,40 @@ func (b *Bot) InitBot(config *CalarbotConfig) {
 }
 
 func (b *Bot) InitModules() {
+	// Create a slice to hold module names and their order values
+	type moduleOrder struct {
+		name  string
+		order int
+	}
+	moduleOrders := make([]moduleOrder, 0, len(b.Modules))
+
 	if b.Modules == nil {
 		b.Modules = make(map[string]*botModules.ModuleClient)
 	}
 	for configName, moduleConfig := range b.BotConfig.Modules {
 		b.Modules[configName] = &botModules.ModuleClient{BaseURL: moduleConfig.Url}
+		moduleOrders = append(moduleOrders, moduleOrder{
+			name:  configName,
+			order: b.Modules[configName].Order(),
+		})
+
+	}
+
+	// Sort modules by their order
+	sort.Slice(moduleOrders, func(i, j int) bool {
+		return moduleOrders[i].order < moduleOrders[j].order
+	})
+
+	// Populate orderedModules with sorted module names
+	b.orderedModules = make([]string, len(moduleOrders))
+	for i, mo := range moduleOrders {
+		b.orderedModules[i] = mo.name
+	}
+
+	fmt.Println("Initialized modules:")
+	for _, moduleName := range b.orderedModules {
+		client := b.Modules[moduleName]
+		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, client.Order())
 	}
 }
 
@@ -70,7 +102,8 @@ func (b *Bot) RunBot() {
 			var answer string
 			var err error
 
-			for moduleName, client := range b.Modules {
+			for _, moduleName := range b.orderedModules {
+				client := b.Modules[moduleName]
 				if !b.shouldIAnswer(moduleName, update, client, payload) {
 					continue
 				}

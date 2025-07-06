@@ -11,6 +11,25 @@ type ModuleClient struct {
 	BaseURL string
 }
 
+func (c *ModuleClient) Order() int {
+	url := c.BaseURL + "/order"
+	resp, err := http.Get(url)
+	if err != nil {
+		return 9999
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Order int `json:"order"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		fmt.Println("Error decoding order response:", err)
+		return 9999
+	}
+	return result.Order
+
+}
+
 func (c *ModuleClient) IsCalled(msg *Payload) (bool, error) {
 	url := c.BaseURL + "/is_called"
 	body, _ := json.Marshal(msg)
