@@ -60,11 +60,15 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 		option.WithAPIKey(m.aiConfig.Token),
 		option.WithBaseURL(m.aiConfig.Url),
 	)
+	chatName := "Unknown"
+	if payload.Msg.Chat != nil && payload.Msg.Chat.Title != "" {
+		chatName = payload.Msg.Chat.Title
+	}
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage(fmt.Sprintf("Message from %s:\n'%s'", payload.Msg.From.UserName, payload.Msg.Text)),
+			openai.UserMessage(fmt.Sprintf("Message from %s in %ы:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
 		},
-		Model: openai.ChatModelGPT4o,
+		Model: openai.ChatModelGPT4_1,
 	})
 	if err != nil {
 		return "", fmt.Errorf("error calling OpenAI API: %v", err)
