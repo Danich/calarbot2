@@ -8,6 +8,14 @@ import (
 )
 
 func ServeModule(module BotModule, addr string) error {
+	http.HandleFunc("/order", func(w http.ResponseWriter, r *http.Request) {
+		order := module.Order()
+		err := json.NewEncoder(w).Encode(map[string]int{"order": order})
+		if err != nil {
+			fmt.Printf("error encoding order: %w", err)
+		}
+	})
+
 	http.HandleFunc("/is_called", func(w http.ResponseWriter, r *http.Request) {
 		var payload Payload
 		err := json.NewDecoder(r.Body).Decode(&payload)
