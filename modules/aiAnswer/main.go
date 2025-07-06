@@ -1,18 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"math/rand"
+	"net/http"
 	"os"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/botModules"
 	"calarbot2/common"
-
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 )
 
 const AiConfigFile = "/aiConfig.yaml"
@@ -24,13 +26,33 @@ type Module struct {
 }
 
 type AIConfig struct {
-	Name        string `yaml:"name"`
-	Url         string `yaml:"url"`
-	Token       string `yaml:"token"`
-	AnswerLevel int    `yaml:"answer_level"`
-	ReplyWeight int    `yaml:"reply_weight"`
-	CallWeight  int    `yaml:"call_weight"`
-	BotUsername string `yaml:"bot_username"`
+	Name          string `yaml:"name"`
+	Url           string `yaml:"url"`
+	Token         string `yaml:"token"`
+	AnswerLevel   int    `yaml:"answer_level"`
+	ReplyWeight   int    `yaml:"reply_weight"`
+	CallWeight    int    `yaml:"call_weight"`
+	BotUsername   string `yaml:"bot_username"`
+	PromptId      string `yaml:"prompt_id"`
+	PromptVersion string `yaml:"prompt_version"`
+}
+
+type PromptRef struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+type ResponseAPIResponse struct {
+	ID                string      `json:"id"`
+	Object            string      `json:"object"`
+	Created           int64       `json:"created"`
+	Model             string      `json:"model"`
+	Prompt            PromptRef   `json:"prompt"`
+	Message           ChatMessage `json:"message"` // <— reuse here
+	SystemFingerprint string      `json:"system_fingerprint"`
 }
 
 func (m Module) Order() int {
@@ -56,24 +78,61 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 }
 
 func (m Module) Answer(payload *botModules.Payload) (string, error) {
-	client := openai.NewClient(
-		option.WithAPIKey(m.aiConfig.Token),
-		option.WithBaseURL(m.aiConfig.Url),
-	)
+	//client := openai.NewClient(
+	//	option.WithAPIKey(m.aiConfig.Token),
+	//	option.WithBaseURL(m.aiConfig.Url),
+	//)
 	chatName := "Unknown"
 	if payload.Msg.Chat != nil && payload.Msg.Chat.Title != "" {
 		chatName = payload.Msg.Chat.Title
 	}
-	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
+	// Currently there's no way to use the OpenAI API with a prompt ID and version directly
+	//
+	//chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
+	//	Messages: []openai.ChatCompletionMessageParamUnion{
+	//		openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
+	//	},
+	//
+	//	Model: openai.ChatModelGPT4_1,
+	//})
+	//if err != nil {
+	//	return "", fmt.Errorf("error calling OpenAI API: %v", err)
+	//}
+	//return chatCompletion.Choices[0].Message.Content, nil
+	return m.callWithHttp(payload, chatName)
+}
+
+func (m Module) callWithHttp(payload *botModules.Payload, chatName string) (string, error) {
+
+	requestBody := map[string]interface{}{
+		"prompt": map[string]string{
+			"id":      m.aiConfig.PromptId,
+			"version": m.aiConfig.PromptVersion,
 		},
-		Model: openai.ChatModelGPT4_1,
-	})
-	if err != nil {
-		return "", fmt.Errorf("error calling OpenAI API: %v", err)
+		"message": map[string]string{
+			"role":    "user",
+			"content": fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text),
+		},
 	}
-	return chatCompletion.Choices[0].Message.Content, nil
+
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://api.openai.com/v1/responses", bytes.NewReader(bodyBytes))
+	req.Header.Set("Authorization", "Bearer "+m.aiConfig.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result ResponseAPIResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Fatalf("Failed to parse response: %v", err)
+	}
+	return result.Message.Content, nil
 }
 
 func main() {
