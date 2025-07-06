@@ -7,7 +7,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func Contains(slice []int64, value int64) bool {
+// Contains checks if a slice contains a specific value.
+// It works with any comparable type (int, string, etc.).
+func Contains[T comparable](slice []T, value T) bool {
 	for _, v := range slice {
 		if v == value {
 			return true
