@@ -47,8 +47,8 @@ jobs:
             docker-compose up --build -d
           else
             for service in $SERVICES; do
-              docker-compose build \$service &&
-              docker-compose up -d \$service
+              docker-compose build $service &&
+              docker-compose up -d $service
             done
           fi
           ENDSSH
