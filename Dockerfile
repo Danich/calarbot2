@@ -1,3 +1,8 @@
+FROM golang:1.22-alpine AS common-image
+WORKDIR /app
+COPY common .
+COPY botModules .
+
 # Build stage for engine
 FROM golang:1.22-alpine AS engine-builder
 WORKDIR /app

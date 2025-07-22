@@ -1,17 +1,21 @@
 version: '3.8'
 services:
   engine:
-    build: .
-    image: calarbot2:latest
-    command: ["/engine"]
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    image: calarbot2-engine:latest
+    command: ["./engine"]
     volumes:
       - /opt/calarbot/calarbot.yaml:/calarbot.yaml
       - /opt/calarbot/tokens/.tgtoken:/.tgtoken
 
   simpleReply:
-    build: .
-    image: calarbot2:latest
-    command: ["/simpleReply"]
+    build:
+      context: .
+      dockerfile: modules/simpleReply/Dockerfile
+    image: calarbot2-simplereply:latest
+    command: ["./simpleReply"]
     ports:
       - "8080:8080"
     environment:
@@ -19,9 +23,11 @@ services:
       - MODULE_ORDER=1000
 
   skazka:
-    build: .
-    image: calarbot2:latest
-    command: ["/skazka"]
+    build:
+      context: .
+      dockerfile: modules/skazka/Dockerfile
+    image: calarbot2-skazka:latest
+    command: ["./skazka"]
     ports:
       - "8081:8080"
     environment:
@@ -40,9 +46,11 @@ services:
     restart: always
 
   sber:
-    build: .
-    image: calarbot2:latest
-    command: ["/sber"]
+    build:
+      context: .
+      dockerfile: modules/sber/Dockerfile
+    image: calarbot2-sber:latest
+    command: ["./sber"]
     ports:
       - "8082:8080"
     environment:
@@ -53,9 +61,11 @@ services:
       - sberify-service
 
   aiAnswer:
-    build: .
-    image: calarbot2:latest
-    command: ["/aiAnswer"]
+    build:
+      context: .
+      dockerfile: modules/aiAnswer/Dockerfile
+    image: calarbot2-aianswer:latest
+    command: ["./aiAnswer"]
     ports:
       - "8083:8080"
     environment:
