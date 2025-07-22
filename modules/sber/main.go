@@ -128,7 +128,6 @@ func main() {
 		sberifyURL: sberifyURL,
 	}
 
-	// Start the server and handle graceful shutdown
 	if err := botModules.RunModuleServer(module, ":"+port, 0); err != nil {
 		fmt.Println(err)
 	}
