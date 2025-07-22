@@ -58,9 +58,9 @@ func TestModuleClientOrder(t *testing.T) {
 
 				// Write response
 				if resp, ok := tt.serverResponse.(string); ok {
-					fmt.Fprint(w, resp)
+					_, _ = fmt.Fprint(w, resp)
 				} else {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					_ = json.NewEncoder(w).Encode(tt.serverResponse)
 				}
 			}))
 			defer server.Close()
@@ -155,9 +155,9 @@ func TestModuleClientIsCalled(t *testing.T) {
 
 				// Write response
 				if resp, ok := tt.serverResponse.(string); ok {
-					fmt.Fprint(w, resp)
+					_, _ = fmt.Fprint(w, resp)
 				} else {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					_ = json.NewEncoder(w).Encode(tt.serverResponse)
 				}
 			}))
 			defer server.Close()
@@ -273,9 +273,9 @@ func TestModuleClientAnswer(t *testing.T) {
 
 				// Write response
 				if resp, ok := tt.serverResponse.(string); ok {
-					fmt.Fprint(w, resp)
+					_, _ = fmt.Fprint(w, resp)
 				} else {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					_ = json.NewEncoder(w).Encode(tt.serverResponse)
 				}
 			}))
 			defer server.Close()
