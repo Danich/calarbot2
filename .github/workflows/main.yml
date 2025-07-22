@@ -1,5 +1,9 @@
 name: Deploy to server
-on: push
+on:
+  push:
+    branches:
+      - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -13,7 +17,7 @@ jobs:
         id: get-diff
         run: |
           git fetch origin main
-          git diff --name-only origin/main...HEAD > changed.txt
+          git diff --name-only HEAD~1 HEAD > changed.txt
           echo "Changed files:"
           cat changed.txt
 
@@ -35,7 +39,7 @@ jobs:
       - name: Deploy to server
         run: |
           echo "Services to deploy: $SERVICES"
-          ssh -v -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'ENDSSH'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'ENDSSH'
           cd ${{ secrets.DEPLOY_DIR }}
           git pull
           if echo '$SERVICES' | grep -q 'all'; then
