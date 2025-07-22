@@ -7,6 +7,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get changed files
+        id: get-diff
+        run: |
+          git fetch origin main
+          git diff --name-only origin/main...HEAD > changed.txt
+          echo "Changed files:"
+          cat changed.txt
+
+      - name: Detect changed services
+        id: detect
+        run: |
+          export CHANGED_FILES="$(cat changed.txt)"
+          python3 detect_changed_services.py > services.txt
+          echo "SERVICES=$(cat services.txt)" >> $GITHUB_ENV
+
       - name: Set up SSH key
         run: |
           env
@@ -17,10 +32,16 @@ jobs:
 
       - name: Deploy to server
         run: |
+          echo "Services to deploy: $SERVICES"
           ssh -v -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'ENDSSH'
-          cd /opt/calarbot2
+          cd ${{ secrets.DEPLOY_DIR }}
           git pull
-          docker-compose stop
-          docker system prune -f
-          docker-compose up -d --build
+          if echo '$SERVICES' | grep -q 'all'; then
+            docker-compose up --build -d
+          else
+            for service in $SERVICES; do
+              docker-compose build \$service &&
+              docker-compose up -d \$service
+            done
+          fi
           ENDSSH
