@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 
 	"calarbot2/botModules"
 	"calarbot2/common"
-
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 )
 
 const AiConfigFile = "/aiConfig.yaml"
@@ -25,14 +23,33 @@ type Module struct {
 }
 
 type AIConfig struct {
-	Name        string `yaml:"name"`
-	Url         string `yaml:"url"`
-	Token       string `yaml:"token"`
-	AnswerLevel int    `yaml:"answer_level"`
-	ReplyWeight int    `yaml:"reply_weight"`
-	CallWeight  int    `yaml:"call_weight"`
-	BotUsername string `yaml:"bot_username"`
+	Name         string `yaml:"name"`
+	Url          string `yaml:"url"`
+	Token        string `yaml:"token"`
+	AnswerLevel  int    `yaml:"answer_level"`
+	ReplyWeight  int    `yaml:"reply_weight"`
+	CallWeight   int    `yaml:"call_weight"`
+	BotUsername  string `yaml:"bot_username"`
+	SystemPrompt string `yaml:"system_prompt"`
 }
+
+//type PromptRef struct {
+//	ID      string `json:"id"`
+//	Version string `json:"version"`
+//}
+//type ChatMessage struct {
+//	Role    string `json:"role"`
+//	Content string `json:"content"`
+//}
+//type ResponseAPIResponse struct {
+//	ID                string      `json:"id"`
+//	Object            string      `json:"object"`
+//	Created           int64       `json:"created"`
+//	Model             string      `json:"model"`
+//	Prompt            PromptRef   `json:"prompt"`
+//	Message           ChatMessage `json:"message"` // <— reuse here
+//	SystemFingerprint string      `json:"system_fingerprint"`
+//}
 
 func (m Module) Order() int {
 	return m.order
@@ -47,7 +64,7 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 		fmt.Printf("Reply to my message, roll: %d\n", roll)
 		roll = roll + m.aiConfig.ReplyWeight
 	}
-	if msg.From != nil && containsAtUsername(msg.Text, m.aiConfig.BotUsername) {
+	if msg.Entities != nil && common.Contains(extractMentions(msg), "@"+m.aiConfig.BotUsername) {
 		fmt.Printf("Message contains @%s, roll: %d\n", m.aiConfig.BotUsername, roll)
 		roll = roll + m.aiConfig.CallWeight
 	}
@@ -61,17 +78,57 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 		option.WithAPIKey(m.aiConfig.Token),
 		option.WithBaseURL(m.aiConfig.Url),
 	)
+	chatName := "Unknown"
+	if payload.Msg.Chat != nil && payload.Msg.Chat.Title != "" {
+		chatName = payload.Msg.Chat.Title
+	}
+
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage("User asked for"),
+			openai.SystemMessage(m.aiConfig.SystemPrompt),
+			openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
 		},
-		Model: openai.ChatModelGPT4o,
+
+		Model: openai.ChatModelGPT4_1Mini,
 	})
 	if err != nil {
 		return "", fmt.Errorf("error calling OpenAI API: %v", err)
 	}
 	return chatCompletion.Choices[0].Message.Content, nil
 }
+
+//func (m Module) callWithHttp(payload *botModules.Payload, chatName string) (string, error) {
+//
+//	requestBody := map[string]interface{}{
+//		"prompt": map[string]string{
+//			"id":      m.aiConfig.PromptId,
+//			"version": m.aiConfig.PromptVersion,
+//		},
+//		"message": map[string]string{
+//			"role":    "user",
+//			"content": fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text),
+//		},
+//	}
+//
+//	bodyBytes, _ := json.Marshal(requestBody)
+//
+//	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://api.openai.com/v1/responses", bytes.NewReader(bodyBytes))
+//	req.Header.Set("Authorization", "Bearer "+m.aiConfig.Token)
+//	req.Header.Set("Content-Type", "application/json")
+//
+//	resp, err := http.DefaultClient.Do(req)
+//	if err != nil {
+//		panic(err)
+//	}
+//	defer resp.Body.Close()
+//
+//	body, _ := io.ReadAll(resp.Body)
+//	var result ResponseAPIResponse
+//	if err := json.Unmarshal(body, &result); err != nil {
+//		log.Fatalf("Failed to parse response: %v", err)
+//	}
+//	return result.Message.Content, nil
+//}
 
 func main() {
 	order := 1000
@@ -93,6 +150,10 @@ func main() {
 	}
 }
 
-func containsAtUsername(text, username string) bool {
-	return strings.Contains(text, "@"+username)
+func extractMentions(msg *tgbotapi.Message) []string {
+	var mentions []string
+	for _, entity := range msg.Entities {
+		mentions = append(mentions, msg.Text[entity.Offset:entity.Offset+entity.Length])
+	}
+	return mentions
 }
