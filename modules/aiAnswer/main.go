@@ -96,7 +96,6 @@ func main() {
 
 	module := Module{order: order, aiConfig: aiConfig}
 
-	// Start the server and handle graceful shutdown
 	if err := botModules.RunModuleServer(module, ":8080", 0); err != nil {
 		fmt.Println(err)
 	}

@@ -8,7 +8,7 @@ def detect_services(files: List[str]) -> Set[str]:
             return {"all"}
         elif file.startswith("engine/"):
             services.add("engine")
-        elif file.startswith("Modules/"):
+        elif file.startswith("modules/"):
             parts = file.split("/")
             if len(parts) > 1:
                 services.add(parts[1])
