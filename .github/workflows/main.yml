@@ -41,6 +41,7 @@ jobs:
           echo "Services to deploy: $SERVICES"
           ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'ENDSSH'
           cd ${{ secrets.DEPLOY_DIR }}
+          SERVICES="${{ env.SERVICES }}"
           git pull
           if echo '$SERVICES' | grep -q 'all'; then
             docker-compose up --build -d
