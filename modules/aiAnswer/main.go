@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 
 	"calarbot2/botModules"
 	"calarbot2/common"
+
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 const AiConfigFile = "/aiConfig.yaml"
@@ -89,7 +91,7 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 			openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
 		},
 
-		Model: openai.ChatModelGPT4_1,
+		Model: openai.ChatModelGPT4_1Mini,
 	})
 	if err != nil {
 		return "", fmt.Errorf("error calling OpenAI API: %v", err)
