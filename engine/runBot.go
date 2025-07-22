@@ -13,6 +13,9 @@ import (
 	"calarbot2/common"
 )
 
+// Ensure mock_module_client.go is included in the build
+var _ = NewMockModuleClient
+
 type Bot struct {
 	BotAPI         *tgbotapi.BotAPI
 	Flags          map[string]bool
