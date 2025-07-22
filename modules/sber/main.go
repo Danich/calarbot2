@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -104,7 +105,9 @@ func main() {
 	// Get the module order from environment variable or use default
 	order := 500
 	if orderEnv := os.Getenv("MODULE_ORDER"); orderEnv != "" {
-		fmt.Sscanf(orderEnv, "%d", &order)
+		if v, err := strconv.Atoi(orderEnv); err == nil {
+			order = v
+		}
 	}
 
 	// Get the sberify service URL from environment variable or use default
@@ -125,8 +128,8 @@ func main() {
 		sberifyURL: sberifyURL,
 	}
 
-	err := botModules.ServeModule(module, ":"+port)
-	if err != nil {
-		fmt.Println("Error starting server:", err)
+	// Start the server and handle graceful shutdown
+	if err := botModules.RunModuleServer(module, ":"+port, 0); err != nil {
+		fmt.Println(err)
 	}
 }
