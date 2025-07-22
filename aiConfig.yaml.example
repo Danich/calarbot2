@@ -7,5 +7,4 @@ call_weight: 200
 reply_weight: 200
 prompt_id: pmpt...
 prompt_version: 1
-api_url:
 model_name: gpt-4.1-mini

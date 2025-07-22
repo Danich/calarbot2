@@ -22,7 +22,7 @@ func (c *ModuleClient) Order() int {
 	var result struct {
 		Order int `json:"order"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || resp.StatusCode != 200 {
 		fmt.Println("Error decoding order response:", err)
 		return 9999
 	}

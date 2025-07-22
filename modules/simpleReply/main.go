@@ -25,8 +25,9 @@ func main() {
 		_, _ = fmt.Sscanf(os.Args[1], "%d", &order)
 	}
 	module := Module{order: order}
-	err := botModules.ServeModule(module, ":8080")
-	if err != nil {
-		fmt.Println("Error starting server:", err)
+
+	// Start the server and handle graceful shutdown
+	if err := botModules.RunModuleServer(module, ":8080", 0); err != nil {
+		fmt.Println(err)
 	}
 }

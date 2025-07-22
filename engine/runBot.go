@@ -21,6 +21,11 @@ type Bot struct {
 	orderedModules []string
 }
 
+type moduleOrder struct {
+	name  string
+	order int
+}
+
 func readToken(filename string) (string, error) {
 	token, err := os.ReadFile(filename)
 
@@ -49,10 +54,6 @@ func (b *Bot) InitBot(config *CalarbotConfig) {
 
 func (b *Bot) InitModules() {
 	// Create a slice to hold module names and their order values
-	type moduleOrder struct {
-		name  string
-		order int
-	}
 	moduleOrders := make([]moduleOrder, 0, len(b.Modules))
 
 	if b.Modules == nil {
@@ -67,10 +68,7 @@ func (b *Bot) InitModules() {
 
 	}
 
-	// Sort modules by their order
-	sort.Slice(moduleOrders, func(i, j int) bool {
-		return moduleOrders[i].order < moduleOrders[j].order
-	})
+	moduleOrders = sortModules(moduleOrders)
 
 	// Populate orderedModules with sorted module names
 	b.orderedModules = make([]string, len(moduleOrders))
@@ -83,6 +81,14 @@ func (b *Bot) InitModules() {
 		client := b.Modules[moduleName]
 		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, client.Order())
 	}
+}
+
+func sortModules(moduleOrders []moduleOrder) []moduleOrder {
+	// Sort modules by their order
+	sort.Slice(moduleOrders, func(i, j int) bool {
+		return moduleOrders[i].order < moduleOrders[j].order
+	})
+	return moduleOrders
 }
 
 func (b *Bot) RunBot() {
@@ -134,13 +140,27 @@ func (b *Bot) RunBot() {
 func (b *Bot) shouldIAnswer(
 	moduleName string,
 	update tgbotapi.Update,
-	client *botModules.ModuleClient,
+	client interface{},
 	payload *botModules.Payload,
 ) bool {
 	if b.BotConfig.Modules[moduleName].EnabledOn != nil && !common.Contains(b.BotConfig.Modules[moduleName].EnabledOn, update.Message.Chat.ID) {
 		return false
 	}
-	isCalled, err := client.IsCalled(payload)
+
+	var isCalled bool
+	var err error
+
+	// Check if client is a MockModuleClient (for testing)
+	if mockClient, ok := client.(*MockModuleClient); ok {
+		isCalled, err = mockClient.IsCalled(payload)
+	} else if moduleClient, ok := client.(*botModules.ModuleClient); ok {
+		// Regular ModuleClient
+		isCalled, err = moduleClient.IsCalled(payload)
+	} else {
+		log.Printf("Unknown client type for module %s", moduleName)
+		return false
+	}
+
 	if err != nil {
 		log.Printf("Error checking if module %s is called: %v", moduleName, err)
 		return false
