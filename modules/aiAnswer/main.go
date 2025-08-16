@@ -76,10 +76,10 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 	message := "Last messages in chat " + chatName + ":\n"
 	if m.messageLog[payload.Msg.Chat.ID] != nil {
 		for _, loggedMessage := range m.messageLog[payload.Msg.Chat.ID].GetMessages() {
-			message += fmt.Sprintf("from %s: %s\n", loggedMessage.From.UserName, loggedMessage.Text)
+			message += fmt.Sprintf(" from %s: %s\n", loggedMessage.From.UserName, loggedMessage.Text)
 		}
 	}
-	message += fmt.Sprintf("Last message: frrom %s: %s\n", payload.Msg.From.UserName, payload.Msg.Text)
+	message += fmt.Sprintf(" from %s: %s\n", payload.Msg.From.UserName, payload.Msg.Text)
 
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
