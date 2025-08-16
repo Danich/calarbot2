@@ -19,8 +19,9 @@ const AiConfigFile = "/aiConfig.yaml"
 const DiceSize = 1000
 
 type Module struct {
-	order    int
-	aiConfig AIConfig
+	order      int
+	aiConfig   AIConfig
+	messageLog map[int64]*common.MessageLog
 }
 
 type AIConfig struct {
@@ -33,6 +34,7 @@ type AIConfig struct {
 	BotUsername  string `yaml:"bot_username"`
 	SystemPrompt string `yaml:"system_prompt"`
 	ModelName    string `yaml:"model_name"`
+	LogSize      int    `yaml:"log_size"`
 }
 
 func (m Module) Order() int {
@@ -54,6 +56,10 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 	}
 
 	fmt.Printf("Total rolled: %d\n", roll)
+	if m.messageLog[msg.Chat.ID] == nil {
+		m.messageLog[msg.Chat.ID] = common.NewMessageLog(m.aiConfig.LogSize)
+	}
+	m.messageLog[msg.Chat.ID].AddMessage(msg)
 	return roll >= m.aiConfig.AnswerLevel
 }
 
@@ -67,10 +73,19 @@ func (m Module) Answer(payload *botModules.Payload) (string, error) {
 		chatName = payload.Msg.Chat.Title
 	}
 
+	message := "Last messages in chat " + chatName + ":\n"
+	if m.messageLog[payload.Msg.Chat.ID] != nil {
+		for _, loggedMessage := range m.messageLog[payload.Msg.Chat.ID].GetMessages() {
+			message += fmt.Sprintf("from %s: %s\n", loggedMessage.From.UserName, loggedMessage.Text)
+		}
+	}
+	message += fmt.Sprintf("Last message: frrom %s: %s\n", payload.Msg.From.UserName, payload.Msg.Text)
+
 	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(m.aiConfig.SystemPrompt),
-			openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
+			openai.UserMessage(message),
+			//openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
 		},
 
 		Model: m.aiConfig.ModelName,
@@ -94,7 +109,7 @@ func main() {
 		return
 	}
 
-	module := Module{order: order, aiConfig: aiConfig}
+	module := Module{order: order, aiConfig: aiConfig, messageLog: make(map[int64]*common.MessageLog)}
 
 	if err := botModules.RunModuleServer(module, ":8080", 0); err != nil {
 		fmt.Println(err)
