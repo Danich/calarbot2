@@ -8,12 +8,6 @@ import (
 	"google.golang.org/api/option"
 )
 
-// FirestoreConfig конфигурация для Firestore
-type FirestoreConfig struct {
-	ProjectID string `yaml:"project_id"`
-	CredPath  string `yaml:"credentials_path"`
-}
-
 // CreateFirestoreClient создает Firestore клиент с общей конфигурацией
 func CreateFirestoreClient(ctx context.Context, config FirestoreConfig) (*firestore.Client, error) {
 	var client *firestore.Client
