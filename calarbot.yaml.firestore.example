@@ -1,0 +1,12 @@
+# Пример конфигурации для calarbot.yaml
+modules:
+  cookingAdvice:
+    url: "http://localhost:8080"
+    enabled_on: [123456789] # ID чатов, где модуль активен
+
+tgTokenFile: "/telegram_token.txt"
+
+# Общая конфигурация Firestore для всего бота
+firestore:
+  project_id: "your-firestore-project-id"
+  credentials_path: "/path/to/service-account.json"  # Можно оставить пустым для Application Default Credentials

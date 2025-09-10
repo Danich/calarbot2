@@ -15,3 +15,4 @@
 .vscode/
 /.tgtoken
 go.work
+modules/cookingAdvice/

@@ -1,6 +1,8 @@
 package botModules
 
-import tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+import (
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
 
 type Payload struct {
 	Msg   *tgbotapi.Message

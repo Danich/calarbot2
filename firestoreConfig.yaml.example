@@ -1,0 +1,4 @@
+# Общая конфигурация Firestore для всех модулей
+project_id: "your-firestore-project-id"
+credentials_path: "/path/to/service-account.json"  # Можно оставить пустым для Application Default Credentials
+
