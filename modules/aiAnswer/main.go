@@ -124,6 +124,10 @@ func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, err
 	ctx := context.Background()
 	msg := payload.Msg
 
+	if msg == nil || msg.Chat == nil {
+		return botModules.RichAnswer{}, nil
+	}
+
 	var history []store.ContextMessage
 	if m.store != nil {
 		var err error
