@@ -34,29 +34,25 @@ func (m Module) IsCalled(msg *tgbotapi.Message) bool {
 }
 
 // Answer processes the message and returns a response
-func (m Module) Answer(payload *botModules.Payload) (string, error) {
+func (m Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, error) {
 	msg := payload.Msg
 
-	// Extract the text after the /sber command
 	text := extractTextAfterCommand(msg.Text, "/sber")
 
-	// If there's no text or we're replying to a message, use the replied message text
 	if text == "" && msg.ReplyToMessage != nil {
 		text = msg.ReplyToMessage.Text
 	}
 
-	// If there's still no text, return an error message
 	if text == "" {
-		return "Пожалуйста, укажите текст после команды /sber или ответьте на сообщение", nil
+		return botModules.RichAnswer{Text: "Пожалуйста, укажите текст после команды /sber или ответьте на сообщение"}, nil
 	}
 
-	// Call the sberify service
 	result, err := callSberifyService(m.sberifyURL, text)
 	if err != nil {
-		return fmt.Sprintf("Ошибка при обработке текста: %v", err), nil
+		return botModules.RichAnswer{Text: fmt.Sprintf("Ошибка при обработке текста: %v", err)}, nil
 	}
 
-	return result, nil
+	return botModules.RichAnswer{Text: result}, nil
 }
 
 // extractTextAfterCommand extracts the text after a command

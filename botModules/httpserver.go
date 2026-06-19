@@ -43,13 +43,15 @@ func answerAction(module BotModule) func(w http.ResponseWriter, r *http.Request)
 			log.Println(err)
 		}
 		answer, err := module.Answer(&msg)
-		resp := map[string]interface{}{"answer": answer}
+		resp := map[string]interface{}{"answer": answer.Text}
+		if answer.PhotoURL != "" {
+			resp["photo_url"] = answer.PhotoURL
+		}
 		if err != nil {
 			resp["error"] = err.Error()
 		}
-		err = json.NewEncoder(w).Encode(resp)
-		if err != nil {
-			resp["error"] = err.Error()
+		if encodeErr := json.NewEncoder(w).Encode(resp); encodeErr != nil {
+			log.Println(encodeErr)
 		}
 	}
 }

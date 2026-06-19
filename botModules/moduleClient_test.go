@@ -295,8 +295,8 @@ func TestModuleClientAnswer(t *testing.T) {
 			}
 
 			// Check the result
-			if answer != tt.expectedAnswer {
-				t.Errorf("Answer() = %q, want %q", answer, tt.expectedAnswer)
+			if answer.Text != tt.expectedAnswer {
+				t.Errorf("Answer().Text = %q, want %q", answer.Text, tt.expectedAnswer)
 			}
 		})
 	}

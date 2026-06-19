@@ -18,7 +18,7 @@ import (
 type MockModule struct {
 	OrderValue   int
 	IsCalledFunc func(*tgbotapi.Message) bool
-	AnswerFunc   func(*Payload) (string, error)
+	AnswerFunc   func(*Payload) (RichAnswer, error)
 }
 
 func (m *MockModule) Order() int {
@@ -32,11 +32,11 @@ func (m *MockModule) IsCalled(msg *tgbotapi.Message) bool {
 	return false
 }
 
-func (m *MockModule) Answer(payload *Payload) (string, error) {
+func (m *MockModule) Answer(payload *Payload) (RichAnswer, error) {
 	if m.AnswerFunc != nil {
 		return m.AnswerFunc(payload)
 	}
-	return "", nil
+	return RichAnswer{}, nil
 }
 
 func TestServeModule(t *testing.T) {
@@ -49,14 +49,14 @@ func TestServeModule(t *testing.T) {
 			}
 			return msg.Text == "call me"
 		},
-		AnswerFunc: func(payload *Payload) (string, error) {
+		AnswerFunc: func(payload *Payload) (RichAnswer, error) {
 			if payload == nil || payload.Msg == nil {
-				return "", fmt.Errorf("invalid payload")
+				return RichAnswer{}, fmt.Errorf("invalid payload")
 			}
 			if payload.Msg.Text == "error" {
-				return "error response", fmt.Errorf("test error")
+				return RichAnswer{Text: "error response"}, fmt.Errorf("test error")
 			}
-			return "test answer for: " + payload.Msg.Text, nil
+			return RichAnswer{Text: "test answer for: " + payload.Msg.Text}, nil
 		},
 	}
 

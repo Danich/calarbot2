@@ -108,7 +108,7 @@ func (b *Bot) RunBot() {
 
 			// Find the module that should handle this message
 			payload := &botModules.Payload{Msg: update.Message, Extra: nil}
-			var answer string
+			var answer botModules.RichAnswer
 			var err error
 
 			for _, moduleName := range b.orderedModules {
@@ -121,18 +121,24 @@ func (b *Bot) RunBot() {
 				answer, err = client.Answer(payload)
 				if err != nil {
 					log.Printf("Error in module %s: %v", moduleName, err)
-					answer = "An error occurred while processing your request."
+					answer = botModules.RichAnswer{Text: "An error occurred while processing your request."}
 				}
 				break
 			}
 
-			// Only send a response if there's something to say
-			if answer != "" {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, answer)
+			if answer.PhotoURL != "" {
+				photo := tgbotapi.NewPhoto(update.Message.Chat.ID, tgbotapi.FileURL(answer.PhotoURL))
+				if answer.Text != "" {
+					photo.Caption = answer.Text
+				}
+				photo.ReplyToMessageID = update.Message.MessageID
+				if _, err = bot.Send(photo); err != nil {
+					log.Printf("Error sending photo: %v", err)
+				}
+			} else if answer.Text != "" {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, answer.Text)
 				msg.ReplyToMessageID = update.Message.MessageID
-
-				_, err = bot.Send(msg)
-				if err != nil {
+				if _, err = bot.Send(msg); err != nil {
 					log.Printf("Error sending message: %v", err)
 				}
 			}

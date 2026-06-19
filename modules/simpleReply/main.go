@@ -15,8 +15,8 @@ type Module struct {
 
 func (m Module) Order() int                        { return m.order }
 func (m Module) IsCalled(_ *tgbotapi.Message) bool { return true }
-func (m Module) Answer(msg *botModules.Payload) (string, error) {
-	return msg.Msg.Text, nil
+func (m Module) Answer(msg *botModules.Payload) (botModules.RichAnswer, error) {
+	return botModules.RichAnswer{Text: msg.Msg.Text}, nil
 }
 
 func main() {

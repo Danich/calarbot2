@@ -81,8 +81,8 @@ func TestModuleAnswer(t *testing.T) {
 			}
 
 			// Check the answer
-			if answer != tt.expected {
-				t.Errorf("Answer() = %q, want %q", answer, tt.expected)
+			if answer.Text != tt.expected {
+				t.Errorf("Answer().Text = %q, want %q", answer.Text, tt.expected)
 			}
 		})
 	}

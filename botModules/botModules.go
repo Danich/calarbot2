@@ -7,8 +7,13 @@ type Payload struct {
 	Extra map[string]interface{}
 }
 
+type RichAnswer struct {
+	Text     string
+	PhotoURL string
+}
+
 type BotModule interface {
 	Order() int
 	IsCalled(msg *tgbotapi.Message) bool
-	Answer(payload *Payload) (string, error)
+	Answer(payload *Payload) (RichAnswer, error)
 }

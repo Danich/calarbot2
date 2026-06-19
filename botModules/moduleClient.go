@@ -48,24 +48,25 @@ func (c *ModuleClient) IsCalled(msg *Payload) (bool, error) {
 	return result.Called, nil
 }
 
-func (c *ModuleClient) Answer(msg *Payload) (string, error) {
+func (c *ModuleClient) Answer(msg *Payload) (RichAnswer, error) {
 	url := c.BaseURL + "/answer"
 	body, _ := json.Marshal(msg)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
-		return "", err
+		return RichAnswer{}, err
 	}
 	defer resp.Body.Close()
 
 	var result struct {
-		Answer string `json:"answer"`
-		Error  string `json:"error,omitempty"`
+		Answer   string `json:"answer"`
+		PhotoURL string `json:"photo_url,omitempty"`
+		Error    string `json:"error,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+		return RichAnswer{}, err
 	}
 	if result.Error != "" {
-		return result.Answer, fmt.Errorf("%s", result.Error)
+		return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL}, fmt.Errorf("%s", result.Error)
 	}
-	return result.Answer, nil
+	return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL}, nil
 }

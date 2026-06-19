@@ -98,19 +98,20 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	return false
 }
 
-func (m *Module) Answer(payload *botModules.Payload) (string, error) {
+func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, error) {
 	msg := payload.Msg
 
 	if msg.IsCommand() {
 		cmd := msg.Command()
 		if cmd == "skazka" {
-			return m.handleSkazkaCommand(msg)
+			text, err := m.handleSkazkaCommand(msg)
+			return botModules.RichAnswer{Text: text}, err
 		} else if cmd == "play" {
-			return m.handlePlayCommand(msg)
+			text, err := m.handlePlayCommand(msg)
+			return botModules.RichAnswer{Text: text}, err
 		}
 	}
 
-	// Check if this is a reply to a turn
 	m.storage.mu.Lock()
 	defer m.storage.mu.Unlock()
 
@@ -123,11 +124,11 @@ func (m *Module) Answer(payload *botModules.Payload) (string, error) {
 			session.mu.Lock()
 			session.catchMessage(msg)
 			session.mu.Unlock()
-			return "", nil // No response needed, the game will continue automatically
+			return botModules.RichAnswer{}, nil
 		}
 	}
 
-	return "Неизвестная команда", nil
+	return botModules.RichAnswer{Text: "Неизвестная команда"}, nil
 }
 
 func (m *Module) handleSkazkaCommand(msg *tgbotapi.Message) (string, error) {
