@@ -88,6 +88,11 @@ func TestGetContextLimit(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("len=%d, want 3", len(msgs))
 	}
+	// Should be the 3 newest: msg2, msg3, msg4
+	if msgs[0].Text != "msg2" || msgs[1].Text != "msg3" || msgs[2].Text != "msg4" {
+		t.Errorf("GetContext(limit=3) returned wrong messages: got %v, want msg2,msg3,msg4",
+			[]string{msgs[0].Text, msgs[1].Text, msgs[2].Text})
+	}
 }
 
 func TestMeta(t *testing.T) {

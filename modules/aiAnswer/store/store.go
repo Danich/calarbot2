@@ -59,12 +59,14 @@ func (s *Store) SaveMessage(msg *tgbotapi.Message) error {
 		mediaType = "sticker"
 	}
 	username := ""
+	var userID int64
 	if msg.From != nil {
 		username = msg.From.UserName
+		userID = msg.From.ID
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO messages (chat_id, user_id, username, text, media_type, ts) VALUES (?, ?, ?, ?, ?, ?)`,
-		msg.Chat.ID, msg.From.ID, username, msg.Text, mediaType, msg.Date,
+		msg.Chat.ID, userID, username, msg.Text, mediaType, msg.Date,
 	)
 	return err
 }
