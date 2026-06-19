@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"calarbot2/botModules"
 )
 
 type ImageGenClient interface {
@@ -19,10 +19,14 @@ func NewImageGenHandler(client ImageGenClient) *ImageGenHandler {
 	return &ImageGenHandler{client: client}
 }
 
-// Generate returns the URL of the generated image.
-func (h *ImageGenHandler) Generate(ctx context.Context, msg *tgbotapi.Message) (string, error) {
-	if msg.Text == "" {
-		return "", fmt.Errorf("empty prompt: no text in message")
+// Generate returns a RichAnswer with the URL of the generated image.
+func (h *ImageGenHandler) Generate(ctx context.Context, prompt string) (botModules.RichAnswer, error) {
+	if prompt == "" {
+		return botModules.RichAnswer{}, fmt.Errorf("empty prompt")
 	}
-	return h.client.GenerateImage(ctx, msg.Text)
+	url, err := h.client.GenerateImage(ctx, prompt)
+	if err != nil {
+		return botModules.RichAnswer{}, err
+	}
+	return botModules.RichAnswer{PhotoURL: url, Text: ""}, nil
 }

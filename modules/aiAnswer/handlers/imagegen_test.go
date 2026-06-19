@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-
 	"calarbot2/modules/aiAnswer/handlers"
 )
 
@@ -17,20 +15,21 @@ func (m *mockImageGen) GenerateImage(_ context.Context, _ string) (string, error
 
 func TestImageGenHandlerGenerate(t *testing.T) {
 	h := handlers.NewImageGenHandler(&mockImageGen{"https://example.com/img.jpg"})
-	msg := &tgbotapi.Message{Text: "нарисуй кота"}
-	url, err := h.Generate(context.Background(), msg)
+	answer, err := h.Generate(context.Background(), "нарисуй кота")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if url != "https://example.com/img.jpg" {
-		t.Errorf("got %q, want %q", url, "https://example.com/img.jpg")
+	if answer.PhotoURL != "https://example.com/img.jpg" {
+		t.Errorf("PhotoURL: got %q, want %q", answer.PhotoURL, "https://example.com/img.jpg")
+	}
+	if answer.Text != "" {
+		t.Errorf("Text: got %q, want %q", answer.Text, "")
 	}
 }
 
 func TestImageGenHandlerEmptyPrompt(t *testing.T) {
 	h := handlers.NewImageGenHandler(&mockImageGen{})
-	msg := &tgbotapi.Message{Text: ""}
-	_, err := h.Generate(context.Background(), msg)
+	_, err := h.Generate(context.Background(), "")
 	if err == nil {
 		t.Error("expected error for empty prompt")
 	}
