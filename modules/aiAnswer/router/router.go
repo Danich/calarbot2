@@ -35,8 +35,15 @@ var (
 	visionKeywords    = []string{"что на картинке", "распознай", "опиши фото", "опиши картинку"}
 )
 
+func messageText(msg *tgbotapi.Message) string {
+	if msg.Text != "" {
+		return msg.Text
+	}
+	return msg.Caption
+}
+
 func (r *Router) Route(ctx context.Context, msg *tgbotapi.Message) (Route, error) {
-	text := strings.ToLower(msg.Text)
+	text := strings.ToLower(messageText(msg))
 
 	if containsAny(text, imagegenKeywords) {
 		return RouteImageGen, nil

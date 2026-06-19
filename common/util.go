@@ -27,21 +27,28 @@ func ReadConfig(configPath string, c interface{}) error {
 	return yaml.Unmarshal(configFile, c)
 }
 
-// ExtractMentions extracts all mentions from a Telegram message.
+// ExtractMentions extracts all mentions from a Telegram message,
+// including mentions in photo/video captions.
 // It correctly handles UTF-16 code units used by Telegram for entity offsets.
 func ExtractMentions(msg *tgbotapi.Message) []string {
-	var mentions []string
-	if msg == nil || msg.Entities == nil {
-		return mentions
+	if msg == nil {
+		return nil
 	}
+	var mentions []string
+	if len(msg.Entities) > 0 {
+		mentions = append(mentions, extractMentionsFromEntities(msg.Text, msg.Entities)...)
+	}
+	if len(msg.CaptionEntities) > 0 {
+		mentions = append(mentions, extractMentionsFromEntities(msg.Caption, msg.CaptionEntities)...)
+	}
+	return mentions
+}
 
-	// Convert the message text to UTF-16 code units
-	utf16Text := Utf16CodeUnits(msg.Text)
-
-	for _, entity := range msg.Entities {
-		// Check if offset and length are within bounds
+func extractMentionsFromEntities(text string, entities []tgbotapi.MessageEntity) []string {
+	utf16Text := Utf16CodeUnits(text)
+	var mentions []string
+	for _, entity := range entities {
 		if entity.Offset >= 0 && entity.Length > 0 && entity.Offset+entity.Length <= len(utf16Text) {
-			// Extract the mention using UTF-16 indices
 			mention := Utf16ToString(utf16Text[entity.Offset : entity.Offset+entity.Length])
 			mentions = append(mentions, mention)
 		}

@@ -42,6 +42,9 @@ func (h *VisionHandler) Describe(ctx context.Context, msg *tgbotapi.Message) (st
 
 	prompt := msg.Text
 	if prompt == "" {
+		prompt = msg.Caption
+	}
+	if prompt == "" {
 		prompt = "Describe this image in detail."
 	}
 	return h.client.DescribeImage(ctx, fileURL, prompt)
