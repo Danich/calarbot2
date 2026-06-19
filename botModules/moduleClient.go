@@ -65,7 +65,7 @@ func (c *ModuleClient) Answer(msg *Payload) (string, error) {
 		return "", err
 	}
 	if result.Error != "" {
-		return result.Answer, fmt.Errorf(result.Error)
+		return result.Answer, fmt.Errorf("%s", result.Error)
 	}
 	return result.Answer, nil
 }

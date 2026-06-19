@@ -95,7 +95,7 @@ func callSberifyService(url, text string) (string, error) {
 	}
 
 	if result.Error != "" {
-		return "", fmt.Errorf(result.Error)
+		return "", fmt.Errorf("%s", result.Error)
 	}
 
 	return result.Result, nil
