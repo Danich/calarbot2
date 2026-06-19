@@ -63,3 +63,4 @@ services:
       - MODULE_ORDER=100
     volumes:
       - /opt/calarbot/tokens/aiConfig.yaml:/aiConfig.yaml
+      - /opt/calarbot/data:/data

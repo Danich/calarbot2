@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 
@@ -10,90 +11,195 @@ import (
 
 	"calarbot2/botModules"
 	"calarbot2/common"
-
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
+	"calarbot2/modules/aiAnswer/handlers"
+	"calarbot2/modules/aiAnswer/models"
+	"calarbot2/modules/aiAnswer/router"
+	"calarbot2/modules/aiAnswer/store"
 )
 
-const AiConfigFile = "/aiConfig.yaml"
-const DiceSize = 1000
-
-type Module struct {
-	order      int
-	aiConfig   AIConfig
-	messageLog map[int64]*common.MessageLog
-}
+const (
+	AiConfigFile = "/aiConfig.yaml"
+	DiceSize     = 1000
+)
 
 type AIConfig struct {
-	Name         string `yaml:"name"`
-	Url          string `yaml:"url"`
-	Token        string `yaml:"token"`
+	BotUsername  string `yaml:"bot_username"`
 	AnswerLevel  int    `yaml:"answer_level"`
 	ReplyWeight  int    `yaml:"reply_weight"`
 	CallWeight   int    `yaml:"call_weight"`
-	BotUsername  string `yaml:"bot_username"`
 	SystemPrompt string `yaml:"system_prompt"`
-	ModelName    string `yaml:"model_name"`
-	LogSize      int    `yaml:"log_size"`
+	ContextSize  int    `yaml:"context_size"`
+	TgBotToken   string `yaml:"tg_bot_token"`
+
+	OpenRouterKey       string `yaml:"openrouter_key"`
+	NebiusKey           string `yaml:"nebius_key"`
+	NebiusURL           string `yaml:"nebius_url"`
+	NebiusVisionModel   string `yaml:"nebius_vision_model"`
+	NebiusImageGenModel string `yaml:"nebius_imagegen_model"`
+	SQLitePath          string `yaml:"sqlite_path"`
 }
 
-func (m Module) Order() int {
-	return m.order
+type Module struct {
+	order         int
+	config        AIConfig
+	store         *store.Store
+	router        *router.Router
+	textHandler   *handlers.TextHandler
+	visionHandler *handlers.VisionHandler
+	imageHandler  *handlers.ImageGenHandler
+	cancelRefresh context.CancelFunc
 }
 
-func (m Module) IsCalled(msg *tgbotapi.Message) bool {
+type noopMeta struct{}
+
+func (noopMeta) GetMeta(string) (string, bool, error) { return "", false, nil }
+func (noopMeta) SetMeta(string, string) error         { return nil }
+
+func metaBackend(s *store.Store) models.MetaStore {
+	if s != nil {
+		return s
+	}
+	return noopMeta{}
+}
+
+func NewModule(order int, config AIConfig) *Module {
+	if config.ContextSize == 0 {
+		config.ContextSize = 20
+	}
+
+	var s *store.Store
+	if config.SQLitePath != "" {
+		var err error
+		s, err = store.New(config.SQLitePath)
+		if err != nil {
+			log.Printf("SQLite unavailable (%v), context will not persist across restarts", err)
+		}
+	}
+
+	sel := models.NewModelSelector(metaBackend(s), "")
+	ctx, cancel := context.WithCancel(context.Background())
+	sel.StartRefresh(ctx)
+
+	orClient := models.NewOpenRouterClient(config.OpenRouterKey, sel, "")
+	nbClient := models.NewNebiusClient(config.NebiusKey, config.NebiusURL, config.NebiusVisionModel, config.NebiusImageGenModel)
+
+	return &Module{
+		order:         order,
+		config:        config,
+		store:         s,
+		router:        router.New(orClient),
+		textHandler:   handlers.NewTextHandler(orClient, config.SystemPrompt),
+		visionHandler: handlers.NewVisionHandler(nbClient, config.TgBotToken),
+		imageHandler:  handlers.NewImageGenHandler(nbClient),
+		cancelRefresh: cancel,
+	}
+}
+
+func (m *Module) Order() int { return m.order }
+
+func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	if msg == nil {
 		return false
 	}
-	roll := rand.Intn(DiceSize + 1)
-	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.UserName == m.aiConfig.BotUsername {
-		fmt.Printf("Reply to my message, roll: %d\n", roll)
-		roll = roll + m.aiConfig.ReplyWeight
-	}
-	if msg.Entities != nil && common.Contains(common.ExtractMentions(msg), "@"+m.aiConfig.BotUsername) {
-		fmt.Printf("Message contains @%s, roll: %d\n", m.aiConfig.BotUsername, roll)
-		roll = roll + m.aiConfig.CallWeight
-	}
-
-	fmt.Printf("Total rolled: %d\n", roll)
-	if m.messageLog[msg.Chat.ID] == nil {
-		m.messageLog[msg.Chat.ID] = common.NewMessageLog(m.aiConfig.LogSize)
-	}
-	m.messageLog[msg.Chat.ID].AddMessage(msg)
-	return roll >= m.aiConfig.AnswerLevel
-}
-
-func (m Module) Answer(payload *botModules.Payload) (string, error) {
-	client := openai.NewClient(
-		option.WithAPIKey(m.aiConfig.Token),
-		option.WithBaseURL(m.aiConfig.Url),
-	)
-	chatName := "Unknown"
-	if payload.Msg.Chat != nil && payload.Msg.Chat.Title != "" {
-		chatName = payload.Msg.Chat.Title
-	}
-
-	message := "Last messages in chat " + chatName + ":\n"
-	if m.messageLog[payload.Msg.Chat.ID] != nil {
-		for _, loggedMessage := range m.messageLog[payload.Msg.Chat.ID].GetMessages() {
-			message += fmt.Sprintf(" from %s: %s\n", loggedMessage.From.UserName, loggedMessage.Text)
+	if m.store != nil {
+		if err := m.store.SaveMessage(msg); err != nil {
+			log.Printf("store.SaveMessage: %v", err)
 		}
 	}
-	message += fmt.Sprintf(" from %s: %s\n", payload.Msg.From.UserName, payload.Msg.Text)
-
-	chatCompletion, err := client.Chat.Completions.New(context.TODO(), openai.ChatCompletionNewParams{
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(m.aiConfig.SystemPrompt),
-			openai.UserMessage(message),
-			//openai.UserMessage(fmt.Sprintf("Message from %s in %s:\n'%s'", payload.Msg.From.UserName, chatName, payload.Msg.Text)),
-		},
-
-		Model: m.aiConfig.ModelName,
-	})
-	if err != nil {
-		return "", fmt.Errorf("error calling OpenAI API: %v", err)
+	if isDirectAddress(msg, m.config.BotUsername) {
+		return true
 	}
-	return chatCompletion.Choices[0].Message.Content, nil
+	roll := rand.Intn(DiceSize + 1)
+	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
+		msg.ReplyToMessage.From.UserName == m.config.BotUsername {
+		roll += m.config.ReplyWeight
+	}
+	if common.Contains(common.ExtractMentions(msg), "@"+m.config.BotUsername) {
+		roll += m.config.CallWeight
+	}
+	return roll >= m.config.AnswerLevel
+}
+
+func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, error) {
+	ctx := context.Background()
+	msg := payload.Msg
+
+	var history []store.ContextMessage
+	if m.store != nil {
+		var err error
+		history, err = m.store.GetContext(msg.Chat.ID, m.config.ContextSize)
+		if err != nil {
+			log.Printf("store.GetContext: %v", err)
+		}
+	}
+
+	if isDirectAddress(msg, m.config.BotUsername) {
+		route, err := m.router.Route(ctx, msg)
+		if err != nil {
+			log.Printf("router.Route error: %v", err)
+			route = router.RouteChat
+		}
+		return m.dispatch(ctx, route, msg, history)
+	}
+
+	text, err := m.textHandler.Chat(ctx, msg, history)
+	if err != nil {
+		log.Printf("textHandler.Chat error: %v", err)
+		return botModules.RichAnswer{}, nil
+	}
+	return botModules.RichAnswer{Text: text}, nil
+}
+
+func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi.Message, history []store.ContextMessage) (botModules.RichAnswer, error) {
+	switch route {
+	case router.RouteImageGen:
+		result, err := m.imageHandler.Generate(ctx, msg.Text)
+		if err != nil {
+			log.Printf("imagegen error: %v", err)
+			return botModules.RichAnswer{Text: "Не удалось сгенерировать изображение"}, nil
+		}
+		return result, nil
+
+	case router.RouteVision:
+		text, err := m.visionHandler.Describe(ctx, msg)
+		if err != nil {
+			log.Printf("vision error: %v", err)
+			return botModules.RichAnswer{Text: "Не удалось обработать изображение"}, nil
+		}
+		return botModules.RichAnswer{Text: text}, nil
+
+	case router.RouteTranslate:
+		text, err := m.textHandler.Translate(ctx, msg, nil)
+		if err != nil {
+			log.Printf("translate error: %v", err)
+			return botModules.RichAnswer{}, nil
+		}
+		return botModules.RichAnswer{Text: text}, nil
+
+	case router.RouteQuestion:
+		text, err := m.textHandler.Answer(ctx, msg, history)
+		if err != nil {
+			log.Printf("answer error: %v", err)
+			return botModules.RichAnswer{}, nil
+		}
+		return botModules.RichAnswer{Text: text}, nil
+
+	default: // RouteChat
+		text, err := m.textHandler.Chat(ctx, msg, history)
+		if err != nil {
+			log.Printf("chat error: %v", err)
+			return botModules.RichAnswer{}, nil
+		}
+		return botModules.RichAnswer{Text: text}, nil
+	}
+}
+
+func isDirectAddress(msg *tgbotapi.Message, botUsername string) bool {
+	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
+		msg.ReplyToMessage.From.UserName == botUsername {
+		return true
+	}
+	return common.Contains(common.ExtractMentions(msg), "@"+botUsername)
 }
 
 func main() {
@@ -102,16 +208,18 @@ func main() {
 		_, _ = fmt.Sscanf(os.Args[1], "%d", &order)
 	}
 
-	aiConfig := AIConfig{}
-	err := common.ReadConfig(AiConfigFile, &aiConfig)
-	if err != nil {
-		fmt.Println("Configure error:", err)
-		return
+	var config AIConfig
+	if err := common.ReadConfig(AiConfigFile, &config); err != nil {
+		log.Fatalf("config error: %v", err)
 	}
 
-	module := Module{order: order, aiConfig: aiConfig, messageLog: make(map[int64]*common.MessageLog)}
+	module := NewModule(order, config)
+	defer module.cancelRefresh()
+	if module.store != nil {
+		defer module.store.Close()
+	}
 
 	if err := botModules.RunModuleServer(module, ":8080", 0); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 }
