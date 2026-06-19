@@ -65,13 +65,14 @@ func getTelegramFileURL(ctx context.Context, botAPIURL, botToken, fileID string)
 	body, _ := io.ReadAll(resp.Body)
 
 	var result struct {
-		OK     bool `json:"ok"`
-		Result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      struct {
 			FilePath string `json:"file_path"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
-		return "", fmt.Errorf("getFile failed for file_id %s", fileID)
+		return "", fmt.Errorf("getFile failed: %s (file_id %s)", result.Description, fileID)
 	}
 	return fmt.Sprintf("%s/file/bot%s/%s", botAPIURL, botToken, result.Result.FilePath), nil
 }
