@@ -2,9 +2,6 @@ package handlers_test
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -19,24 +16,13 @@ func (m *mockVision) DescribeImage(_ context.Context, _, _ string) (string, erro
 }
 
 func TestVisionHandlerDescribe(t *testing.T) {
-	// Fake Telegram getFile API
-	tgServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":     true,
-			"result": map[string]string{"file_path": "photos/test.jpg"},
-		})
-	}))
-	defer tgServer.Close()
-
-	h := handlers.NewVisionHandler(&mockVision{"a fluffy cat"}, "fake-token")
-	h.BotAPIURL = tgServer.URL
-
+	h := handlers.NewVisionHandler(&mockVision{"a fluffy cat"})
 	msg := &tgbotapi.Message{
-		Text:  "what is this?",
-		Photo: []tgbotapi.PhotoSize{{FileID: "file123", Width: 100, Height: 100}},
+		Caption: "что это?",
+		Photo:   []tgbotapi.PhotoSize{{FileID: "file123", Width: 100, Height: 100}},
 	}
 
-	desc, err := h.Describe(context.Background(), msg)
+	desc, err := h.Describe(context.Background(), msg, "https://cdn.telegram.org/file/photos/test.jpg")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -45,11 +31,11 @@ func TestVisionHandlerDescribe(t *testing.T) {
 	}
 }
 
-func TestVisionHandlerNoPhoto(t *testing.T) {
-	h := handlers.NewVisionHandler(&mockVision{"irrelevant"}, "fake-token")
+func TestVisionHandlerNoPhotoURL(t *testing.T) {
+	h := handlers.NewVisionHandler(&mockVision{"irrelevant"})
 	msg := &tgbotapi.Message{Text: "hello"}
-	_, err := h.Describe(context.Background(), msg)
+	_, err := h.Describe(context.Background(), msg, "")
 	if err == nil {
-		t.Error("expected error for message with no photo")
+		t.Error("expected error when no photo URL provided")
 	}
 }

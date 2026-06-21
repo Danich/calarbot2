@@ -10,5 +10,4 @@ nebius_key: "..."
 nebius_url: "https://api.studio.nebius.ai/v1/"
 nebius_vision_model: "..."
 nebius_imagegen_model: "..."
-tg_bot_token: "..."     # needed to download photos from Telegram for vision
 sqlite_path: "/data/calarbot.db"
