@@ -29,7 +29,6 @@ type AIConfig struct {
 	CallWeight   int    `yaml:"call_weight"`
 	SystemPrompt string `yaml:"system_prompt"`
 	ContextSize  int    `yaml:"context_size"`
-	TgBotToken   string `yaml:"tg_bot_token"`
 
 	OpenRouterKey       string `yaml:"openrouter_key"`
 	NebiusKey           string `yaml:"nebius_key"`
@@ -89,7 +88,7 @@ func NewModule(order int, config AIConfig) *Module {
 		store:         s,
 		router:        router.New(orClient),
 		textHandler:   handlers.NewTextHandler(orClient, config.SystemPrompt),
-		visionHandler: handlers.NewVisionHandler(nbClient, config.TgBotToken),
+		visionHandler: handlers.NewVisionHandler(nbClient),
 		imageHandler:  handlers.NewImageGenHandler(nbClient),
 		cancelRefresh: cancel,
 	}
@@ -137,13 +136,15 @@ func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, err
 		}
 	}
 
+	photoURL, _ := payload.Extra["photo_url"].(string)
+
 	if isDirectAddress(msg, m.config.BotUsername) {
 		route, err := m.router.Route(ctx, msg)
 		if err != nil {
 			log.Printf("router.Route error: %v", err)
 			route = router.RouteChat
 		}
-		return m.dispatch(ctx, route, msg, history)
+		return m.dispatch(ctx, route, msg, history, photoURL)
 	}
 
 	text, err := m.textHandler.Chat(ctx, msg, history)
@@ -154,10 +155,14 @@ func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, err
 	return botModules.RichAnswer{Text: text}, nil
 }
 
-func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi.Message, history []store.ContextMessage) (botModules.RichAnswer, error) {
+func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi.Message, history []store.ContextMessage, photoURL string) (botModules.RichAnswer, error) {
 	switch route {
 	case router.RouteImageGen:
-		result, err := m.imageHandler.Generate(ctx, msg.Text)
+		prompt := msg.Text
+		if prompt == "" {
+			prompt = msg.Caption
+		}
+		result, err := m.imageHandler.Generate(ctx, prompt)
 		if err != nil {
 			log.Printf("imagegen error: %v", err)
 			return botModules.RichAnswer{Text: "Не удалось сгенерировать изображение"}, nil
@@ -165,7 +170,7 @@ func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi
 		return result, nil
 
 	case router.RouteVision:
-		text, err := m.visionHandler.Describe(ctx, msg)
+		text, err := m.visionHandler.Describe(ctx, msg, photoURL)
 		if err != nil {
 			log.Printf("vision error: %v", err)
 			return botModules.RichAnswer{Text: "Не удалось обработать изображение"}, nil

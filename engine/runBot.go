@@ -107,7 +107,16 @@ func (b *Bot) RunBot() {
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 			// Find the module that should handle this message
-			payload := &botModules.Payload{Msg: update.Message, Extra: nil}
+			extra := map[string]interface{}{}
+			if msg := update.Message; len(msg.Photo) > 0 {
+				largest := msg.Photo[len(msg.Photo)-1]
+				if photoURL, err := bot.GetFileDirectURL(largest.FileID); err == nil {
+					extra["photo_url"] = photoURL
+				} else {
+					log.Printf("Failed to resolve photo URL: %v", err)
+				}
+			}
+			payload := &botModules.Payload{Msg: update.Message, Extra: extra}
 			var answer botModules.RichAnswer
 			var err error
 
