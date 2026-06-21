@@ -142,7 +142,24 @@ func (c *OpenRouterClient) Complete(ctx context.Context, system, user string) (s
 	if err != nil {
 		return "", err
 	}
-	return res.Choices[0].Message.Content, nil
+	return stripThinking(res.Choices[0].Message.Content), nil
+}
+
+// stripThinking removes <think>...</think> reasoning blocks emitted by some models.
+func stripThinking(s string) string {
+	for {
+		start := strings.Index(s, "<think>")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(s[start:], "</think>")
+		if end == -1 {
+			s = strings.TrimSpace(s[:start])
+			break
+		}
+		s = strings.TrimSpace(s[:start] + s[start+end+len("</think>"):])
+	}
+	return s
 }
 
 func (c *OpenRouterClient) Classify(ctx context.Context, text string) (router.Route, error) {
