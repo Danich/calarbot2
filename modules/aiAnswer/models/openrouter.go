@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -153,6 +154,9 @@ func (c *OpenRouterClient) Complete(ctx context.Context, system, user string) (s
 	})
 	if err != nil {
 		return "", err
+	}
+	if len(res.Choices) == 0 {
+		return "", fmt.Errorf("openrouter: empty choices in response")
 	}
 	return res.Choices[0].Message.Content, nil
 }
