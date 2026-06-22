@@ -77,6 +77,13 @@ func TestModelSelectorKeepsCachedOnRefreshFailure(t *testing.T) {
 	}
 }
 
+func TestStaticModelGet(t *testing.T) {
+	m := models.NewStaticModel("openai/gpt-4o-mini")
+	if m.Get() != "openai/gpt-4o-mini" {
+		t.Errorf("Get() = %q, want %q", m.Get(), "openai/gpt-4o-mini")
+	}
+}
+
 func TestOpenRouterClientClassify(t *testing.T) {
 	tests := []struct {
 		response string
