@@ -10,4 +10,5 @@ nebius_key: "..."
 nebius_url: "https://api.studio.nebius.ai/v1/"
 nebius_vision_model: "..."
 nebius_imagegen_model: "..."
+persona_model: "openai/gpt-4o-mini"  # OpenRouter model for persona wrapping; leave empty to disable
 sqlite_path: "/data/calarbot.db"

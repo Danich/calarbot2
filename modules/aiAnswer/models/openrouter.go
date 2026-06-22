@@ -110,13 +110,25 @@ vision — user wants an image described or analyzed
 question — user has a factual question expecting an answer
 chat — casual conversation or anything else`
 
+// ModelGetter returns the model ID to use for a completion request.
+type ModelGetter interface {
+	Get() string
+}
+
+// StaticModel is a ModelGetter that always returns the same model ID.
+type StaticModel struct{ model string }
+
+func NewStaticModel(model string) StaticModel { return StaticModel{model: model} }
+
+func (s StaticModel) Get() string { return s.model }
+
 type OpenRouterClient struct {
 	apiKey  string
-	sel     *ModelSelector
+	sel     ModelGetter
 	baseURL string
 }
 
-func NewOpenRouterClient(apiKey string, sel *ModelSelector, baseURL string) *OpenRouterClient {
+func NewOpenRouterClient(apiKey string, sel ModelGetter, baseURL string) *OpenRouterClient {
 	if baseURL == "" {
 		baseURL = openrouterBaseURL
 	}
