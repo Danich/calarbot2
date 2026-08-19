@@ -40,15 +40,34 @@ jobs:
         run: |
           echo "Services to deploy: $SERVICES"
           ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'ENDSSH'
+          set -euo pipefail
           cd ${{ secrets.DEPLOY_DIR }}
           SERVICES="${{ env.SERVICES }}"
-          git pull
-          if echo '$SERVICES' | grep -q 'all'; then
+
+          # A hand-edited file in the deploy checkout makes `git pull` refuse to
+          # merge. The job used to sail straight past that and rebuild the tree
+          # it already had, so a green run could mean nothing was deployed.
+          # Untracked files are excluded on purpose: docker-compose.yml is
+          # untracked by design and must not fail the deploy.
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "Deploy checkout has uncommitted changes:" >&2
+            git status --short --untracked-files=no >&2
+            echo "A deploy overwrites this directory. Commit or discard them, then re-run." >&2
+            exit 1
+          fi
+
+          git pull --ff-only
+
+          # Quoted "$SERVICES", not '$SERVICES'. With single quotes grep matched
+          # the literal string, so the all branch never ran and a change under
+          # common/ or botModules/ fell through to `docker-compose build all`,
+          # which is not a service.
+          if echo "$SERVICES" | grep -qw 'all'; then
             docker-compose up --build -d
           else
             for service in $SERVICES; do
-              docker-compose build $service &&
-              docker-compose up -d $service
+              docker-compose build "$service"
+              docker-compose up -d "$service"
             done
           fi
           ENDSSH
