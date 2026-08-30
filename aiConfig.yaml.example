@@ -9,6 +9,12 @@ openrouter_key: "sk-or-..."
 nebius_key: "..."
 nebius_url: "https://api.studio.nebius.ai/v1/"
 nebius_vision_model: "..."
-nebius_imagegen_model: "..."
+# Рисование живёт у отдельного провайдера: Nebius генерацию картинок убрал —
+# в его каталоге не осталось ни одной такой модели. Подойдёт любой
+# OpenAI-совместимый /images/generations; ключ нужен инференсный, не
+# management — последний на инференс-эндпоинтах отвечает «User not found».
+imagegen_url: "https://openrouter.ai/api/v1/"
+imagegen_key: "sk-or-..."
+imagegen_model: "google/gemini-2.5-flash-image"
 persona_model: "openai/gpt-4o-mini"  # OpenRouter model for persona wrapping; leave empty to disable
 sqlite_path: "/data/calarbot.db"
