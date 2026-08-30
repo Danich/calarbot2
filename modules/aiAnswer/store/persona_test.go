@@ -83,3 +83,32 @@ func TestResolvePersonaWithoutSeed(t *testing.T) {
 		t.Errorf("err = %v, want ErrNoPersona", err)
 	}
 }
+
+// Граница владения (source) должна быть окончательной: деплой не может перезаписать
+// админовскую персону. Если попытается, функция возвращает то, что в базе, и PersonaUnchanged.
+func TestUpsertConfigPersonaRespectSourceBoundary(t *testing.T) {
+	s := newTestStore(t)
+	// Создаём персону через deплой (source = 'config')
+	p, _, _ := s.UpsertConfigPersona("mamkin", "mamkin", "you are Mamkin")
+
+	// Симулируем переход в админку: меняем source на 'admin'
+	if err := s.SetPersonaSourceForTesting(p.ID, "admin"); err != nil {
+		t.Fatalf("SetPersonaSourceForTesting: %v", err)
+	}
+
+	// Деплой пытается обновить персону с новым промптом
+	got, change, err := s.UpsertConfigPersona("mamkin", "mamkin", "you are a pigeon")
+	if err != nil {
+		t.Fatalf("UpsertConfigPersona: %v", err)
+	}
+
+	// Граница должна быть соблюдена: деплой не переписал
+	if change != store.PersonaUnchanged {
+		t.Errorf("change = %v, want PersonaUnchanged", change)
+	}
+
+	// Функция должна вернуть то, что на самом деле в базе (админский промпт), не то, что деплой хотел
+	if got.SystemPrompt != "you are Mamkin" {
+		t.Errorf("prompt = %q, want %q (admin's value, not config's)", got.SystemPrompt, "you are Mamkin")
+	}
+}

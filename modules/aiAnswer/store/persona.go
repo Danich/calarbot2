@@ -61,11 +61,21 @@ func (s *Store) UpsertConfigPersona(key, name, prompt string) (Persona, PersonaC
 	}
 	// source в условии — граница владения: деплой правит только свои строки,
 	// админка потом будет править только свои.
-	if _, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE personas SET name = ?, system_prompt = ? WHERE id = ? AND source = 'config'`,
 		name, prompt, p.ID,
-	); err != nil {
+	)
+	if err != nil {
 		return Persona{}, PersonaUnchanged, fmt.Errorf("update persona: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return Persona{}, PersonaUnchanged, fmt.Errorf("rows affected: %w", err)
+	}
+	if affected == 0 {
+		// Персона существует, но владеет её кто-то другой (source != 'config').
+		// Возвращаем то, что на самом деле в базе.
+		return p, PersonaUnchanged, nil
 	}
 	p.Name, p.SystemPrompt = name, prompt
 	return p, PersonaPromptOverwritten, nil
