@@ -24,6 +24,13 @@ const RewriteInstruction = `
 
 // PersonaClient is a Completer decorator: it calls inner to get a raw answer,
 // then calls persona to rewrite it in character. If persona fails, raw is returned.
+//
+// Сейчас никем не используется, и это осознанно. Болталке он оказался не нужен:
+// одна модель отвечает сразу в образе, а два круга давали ответ вдвое
+// характернее нужного и стоили двух запросов. Но он остаётся под маршруты, где
+// точность и голос — разные задачи: перевод разумно доверить модели, которая
+// переводит хорошо, а окрасить отдельно. Vision уже устроен ровно так, только
+// вручную, без этого декоратора.
 type PersonaClient struct {
 	inner     Completer
 	persona   Completer
