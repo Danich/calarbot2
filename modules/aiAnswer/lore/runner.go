@@ -38,9 +38,19 @@ func (r *Runner) Maybe(chatID, personaID int64, canon string) {
 		return
 	}
 	go func() {
+		// Порядок defer важен: Delete должен освободить ключ и тогда, когда
+		// Run паникует — иначе чат навсегда выпадает из роста лора.
 		defer r.running.Delete(key)
+		defer func() {
+			if p := recover(); p != nil {
+				// Это единственная неприсмотренная фоновая горутина на горячем
+				// пути сообщений: паника здесь не должна ронять процесс и
+				// обрывать ответы во всех остальных чатах.
+				log.Printf("lore: panic: chat=%d persona=%d: %v", chatID, personaID, p)
+			}
+		}()
 		if err := r.Run(context.Background(), chatID, personaID, canon); err != nil {
-			log.Printf("lore: %v", err)
+			log.Printf("lore: chat=%d persona=%d: %v", chatID, personaID, err)
 		}
 	}()
 }
