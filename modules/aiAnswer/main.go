@@ -87,13 +87,19 @@ func NewModule(order int, config AIConfig) *Module {
 	nbClient := models.NewNebiusClient(config.NebiusKey, config.NebiusURL, config.NebiusVisionModel)
 	imgClient := models.NewImageClient(config.ImageGenKey, config.ImageGenURL, config.ImageGenModel)
 
-	// textLLM and visionPersona are the OpenRouter client by default;
-	// if persona_model is set, wrap text responses in a character persona.
-	var textLLM models.Completer = orClient
+	// Текстом отвечает одна модель, сразу в образе. Раньше их было две —
+	// дешёвая писала ответ, персона переписывала его в голосе персонажа, — но
+	// для болталки это лишний круг: обе получали «отвечай в роли», ответ
+	// выходил вдвое характернее нужного, и стоил двух запросов вместо одного.
+	//
+	// Vision — другое дело, и там пересказ остался: описание картинки делает
+	// модель Nebius, персонажем она быть не умеет, так что её текст всё ещё
+	// надо окрашивать отдельно.
+	textLLM := orClient
 	var visionPersona handlers.LLMClient
 	if config.PersonaModel != "" {
 		personaOR := models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.PersonaModel), "")
-		textLLM = models.NewPersonaClient(orClient, personaOR, config.SystemPrompt)
+		textLLM = personaOR
 		visionPersona = personaOR
 	}
 
