@@ -47,6 +47,9 @@ func answerAction(module BotModule) func(w http.ResponseWriter, r *http.Request)
 		if answer.PhotoURL != "" {
 			resp["photo_url"] = answer.PhotoURL
 		}
+		if len(answer.Photo) > 0 {
+			resp["photo"] = answer.Photo
+		}
 		if err != nil {
 			resp["error"] = err.Error()
 		}

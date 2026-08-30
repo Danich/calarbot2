@@ -7,20 +7,20 @@ import (
 	"calarbot2/modules/aiAnswer/handlers"
 )
 
-type mockImageGen struct{ url string }
+type mockImageGen struct{ img []byte }
 
-func (m *mockImageGen) GenerateImage(_ context.Context, _ string) (string, error) {
-	return m.url, nil
+func (m *mockImageGen) GenerateImage(_ context.Context, _ string) ([]byte, error) {
+	return m.img, nil
 }
 
 func TestImageGenHandlerGenerate(t *testing.T) {
-	h := handlers.NewImageGenHandler(&mockImageGen{"https://example.com/img.jpg"})
+	h := handlers.NewImageGenHandler(&mockImageGen{[]byte("PNGDATA")})
 	answer, err := h.Generate(context.Background(), "нарисуй кота")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if answer.PhotoURL != "https://example.com/img.jpg" {
-		t.Errorf("PhotoURL: got %q, want %q", answer.PhotoURL, "https://example.com/img.jpg")
+	if string(answer.Photo) != "PNGDATA" {
+		t.Errorf("Photo: got %q, want %q", answer.Photo, "PNGDATA")
 	}
 	if answer.Text != "" {
 		t.Errorf("Text: got %q, want %q", answer.Text, "")

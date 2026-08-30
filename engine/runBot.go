@@ -135,8 +135,14 @@ func (b *Bot) RunBot() {
 				break
 			}
 
-			if answer.PhotoURL != "" {
-				photo := tgbotapi.NewPhoto(update.Message.Chat.ID, tgbotapi.FileURL(answer.PhotoURL))
+			if len(answer.Photo) > 0 || answer.PhotoURL != "" {
+				// Байты, когда они есть: генераторы картинок отдают base64, и
+				// ссылки, за которой телеграм мог бы сходить, не существует.
+				var file tgbotapi.RequestFileData = tgbotapi.FileURL(answer.PhotoURL)
+				if len(answer.Photo) > 0 {
+					file = tgbotapi.FileBytes{Name: "image.png", Bytes: answer.Photo}
+				}
+				photo := tgbotapi.NewPhoto(update.Message.Chat.ID, file)
 				if answer.Text != "" {
 					photo.Caption = answer.Text
 				}
