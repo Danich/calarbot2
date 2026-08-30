@@ -47,6 +47,19 @@ func (s *Store) migrate() error {
 			key   TEXT PRIMARY KEY,
 			value TEXT
 		);
+		CREATE TABLE IF NOT EXISTS personas (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			key           TEXT NOT NULL UNIQUE,
+			name          TEXT NOT NULL,
+			system_prompt TEXT NOT NULL,
+			source        TEXT NOT NULL,
+			created_at    INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS chat_persona (
+			chat_id    INTEGER PRIMARY KEY,
+			persona_id INTEGER NOT NULL,
+			set_at     INTEGER NOT NULL
+		);
 	`)
 	return err
 }
