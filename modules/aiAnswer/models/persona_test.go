@@ -3,6 +3,7 @@ package models_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"calarbot2/modules/aiAnswer/models"
@@ -39,8 +40,8 @@ func TestPersonaClient_wrapsRawAnswer(t *testing.T) {
 		t.Errorf("persona.lastUser = %q, want %q", persona.lastUser, "raw answer")
 	}
 	// persona receives sysPrompt (not original system) as system
-	if persona.lastSystem != "You are a pirate." {
-		t.Errorf("persona.lastSystem = %q, want %q", persona.lastSystem, "You are a pirate.")
+	if !strings.HasPrefix(persona.lastSystem, "You are a pirate.") {
+		t.Errorf("persona.lastSystem = %q, want it to start with the character prompt", persona.lastSystem)
 	}
 }
 
@@ -68,5 +69,26 @@ func TestPersonaClient_propagatesInnerError(t *testing.T) {
 	_, err := c.Complete(context.Background(), "sys", "input")
 	if err == nil {
 		t.Error("expected error when inner client fails")
+	}
+}
+
+// Без явной инструкции персона-модель видит обычную реплику собеседника и
+// отвечает на неё, вместо того чтобы пересказать — бот отвечает сам себе.
+func TestPersonaClient_tellsThePersonaToRewrite(t *testing.T) {
+	inner := &mockCompleter{response: "raw answer"}
+	persona := &mockCompleter{response: "styled answer"}
+
+	c := models.NewPersonaClient(inner, persona, "You are a pirate.")
+	if _, err := c.Complete(context.Background(), "original system", "user input"); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(persona.lastSystem, "Перескажи") {
+		t.Errorf("персона-промпт не содержит инструкции пересказать: %q", persona.lastSystem)
+	}
+	// Сырой ответ идёт как есть: инструкция живёт в system, а не примешивается
+	// к тексту, который надо пересказать.
+	if persona.lastUser != "raw answer" {
+		t.Errorf("persona.lastUser = %q, want %q", persona.lastUser, "raw answer")
 	}
 }

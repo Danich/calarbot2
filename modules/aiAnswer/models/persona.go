@@ -10,6 +10,18 @@ type Completer interface {
 	Complete(ctx context.Context, system, user string) (string, error)
 }
 
+// RewriteInstruction is appended to the character prompt for the persona pass.
+//
+// Without it the persona model sees an ordinary chat turn — a character prompt
+// plus someone's message — and replies to the raw answer instead of restyling
+// it, so the bot answers its own answer. The deployed character prompt makes
+// that worse: it says in so many words to reply to the last message.
+const RewriteInstruction = `
+
+Сейчас тебе дают готовый ответ. Перескажи его своим голосом, сохранив все факты
+и смысл. Не отвечай на этот текст и не добавляй ничего от себя — только
+перескажи его в образе. Верни один лишь пересказ, без пояснений.`
+
 // PersonaClient is a Completer decorator: it calls inner to get a raw answer,
 // then calls persona to rewrite it in character. If persona fails, raw is returned.
 type PersonaClient struct {
@@ -27,7 +39,7 @@ func (c *PersonaClient) Complete(ctx context.Context, system, user string) (stri
 	if err != nil {
 		return "", err
 	}
-	styled, err := c.persona.Complete(ctx, c.sysPrompt, raw)
+	styled, err := c.persona.Complete(ctx, c.sysPrompt+RewriteInstruction, raw)
 	if err != nil {
 		log.Printf("persona wrap error: %v", err)
 		return raw, nil

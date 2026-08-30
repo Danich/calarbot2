@@ -6,6 +6,8 @@ import (
 	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"calarbot2/modules/aiAnswer/models"
 )
 
 type VisionClient interface {
@@ -40,7 +42,7 @@ func (h *VisionHandler) Describe(ctx context.Context, msg *tgbotapi.Message, pho
 	if h.persona == nil {
 		return raw, nil
 	}
-	styled, err := h.persona.Complete(ctx, h.sysPrompt, raw)
+	styled, err := h.persona.Complete(ctx, h.sysPrompt+models.RewriteInstruction, raw)
 	if err != nil {
 		log.Printf("vision persona wrap error: %v", err)
 		return raw, nil

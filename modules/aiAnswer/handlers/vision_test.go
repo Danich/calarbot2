@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -20,12 +21,14 @@ func (m *mockVision) DescribeImage(_ context.Context, _, _ string) (string, erro
 }
 
 type mockPersonaLLM struct {
-	response string
-	err      error
-	lastUser string
+	response   string
+	err        error
+	lastUser   string
+	lastSystem string
 }
 
-func (m *mockPersonaLLM) Complete(_ context.Context, _, user string) (string, error) {
+func (m *mockPersonaLLM) Complete(_ context.Context, system, user string) (string, error) {
+	m.lastSystem = system
 	m.lastUser = user
 	return m.response, m.err
 }
@@ -57,6 +60,11 @@ func TestVisionHandler_Describe_withPersona(t *testing.T) {
 	}
 	if persona.lastUser != "a fluffy cat" {
 		t.Errorf("persona received user=%q, want raw description", persona.lastUser)
+	}
+	// Без инструкции персона отвечает на описание, а не пересказывает его.
+	if !strings.HasPrefix(persona.lastSystem, "You are a pirate.") ||
+		!strings.Contains(persona.lastSystem, "Перескажи") {
+		t.Errorf("persona received system=%q, want the character prompt plus the rewrite instruction", persona.lastSystem)
 	}
 }
 
