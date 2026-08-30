@@ -60,6 +60,22 @@ func (s *Store) migrate() error {
 			persona_id INTEGER NOT NULL,
 			set_at     INTEGER NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS lore (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			chat_id    INTEGER NOT NULL,
+			persona_id INTEGER NOT NULL,
+			level      INTEGER NOT NULL,
+			text       TEXT NOT NULL,
+			ts         INTEGER NOT NULL,
+			covered_by INTEGER
+		);
+		CREATE INDEX IF NOT EXISTS idx_lore ON lore(chat_id, persona_id, level, id);
+		CREATE TABLE IF NOT EXISTS lore_cursor (
+			chat_id         INTEGER NOT NULL,
+			persona_id      INTEGER NOT NULL,
+			last_message_id INTEGER NOT NULL,
+			PRIMARY KEY (chat_id, persona_id)
+		);
 	`)
 	return err
 }
