@@ -15,16 +15,15 @@ type VisionClient interface {
 }
 
 type VisionHandler struct {
-	client    VisionClient
-	persona   LLMClient
-	sysPrompt string
+	client  VisionClient
+	persona LLMClient
 }
 
-func NewVisionHandler(client VisionClient, persona LLMClient, sysPrompt string) *VisionHandler {
-	return &VisionHandler{client: client, persona: persona, sysPrompt: sysPrompt}
+func NewVisionHandler(client VisionClient, persona LLMClient) *VisionHandler {
+	return &VisionHandler{client: client, persona: persona}
 }
 
-func (h *VisionHandler) Describe(ctx context.Context, msg *tgbotapi.Message, photoURL string) (string, error) {
+func (h *VisionHandler) Describe(ctx context.Context, system string, msg *tgbotapi.Message, photoURL string) (string, error) {
 	if photoURL == "" {
 		return "", fmt.Errorf("no photo URL provided")
 	}
@@ -42,7 +41,7 @@ func (h *VisionHandler) Describe(ctx context.Context, msg *tgbotapi.Message, pho
 	if h.persona == nil {
 		return raw, nil
 	}
-	styled, err := h.persona.Complete(ctx, h.sysPrompt+models.RewriteInstruction, raw)
+	styled, err := h.persona.Complete(ctx, system+models.RewriteInstruction, raw)
 	if err != nil {
 		log.Printf("vision persona wrap error: %v", err)
 		return raw, nil

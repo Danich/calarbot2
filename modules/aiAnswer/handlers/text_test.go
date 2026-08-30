@@ -33,7 +33,7 @@ func chatMsg(chatTitle, username, text string) *tgbotapi.Message {
 
 func TestTextHandlerChatIncludesHistory(t *testing.T) {
 	llm := &mockLLM{response: "reply"}
-	h := handlers.NewTextHandler(llm, "you are a bot")
+	h := handlers.NewTextHandler(llm)
 
 	history := []store.ContextMessage{
 		{Username: "alice", Text: "hi"},
@@ -41,7 +41,7 @@ func TestTextHandlerChatIncludesHistory(t *testing.T) {
 	}
 	msg := chatMsg("TestChat", "charlie", "hey")
 
-	got, err := h.Chat(context.Background(), msg, history)
+	got, err := h.Chat(context.Background(), "you are a bot", msg, history)
 	if err != nil || got != "reply" {
 		t.Fatalf("Chat() = %q, %v", got, err)
 	}
@@ -58,10 +58,10 @@ func TestTextHandlerChatIncludesHistory(t *testing.T) {
 
 func TestTextHandlerTranslateUsesTranslationPrompt(t *testing.T) {
 	llm := &mockLLM{response: "translated text"}
-	h := handlers.NewTextHandler(llm, "you are a bot")
+	h := handlers.NewTextHandler(llm)
 
 	msg := chatMsg("", "alice", "Bonjour le monde")
-	got, err := h.Translate(context.Background(), msg, nil)
+	got, err := h.Translate(context.Background(), "you are a bot", msg, nil)
 	if err != nil || got != "translated text" {
 		t.Fatalf("Translate() = %q, %v", got, err)
 	}
@@ -77,7 +77,7 @@ func TestTextHandlerTranslateUsesTranslationPrompt(t *testing.T) {
 // Дописывать его отдельно значит показать модели один и тот же ход дважды.
 func TestChatDoesNotRepeatTheCurrentMessage(t *testing.T) {
 	client := &mockLLM{response: "ок"}
-	h := handlers.NewTextHandler(client, "sys")
+	h := handlers.NewTextHandler(client)
 
 	msg := &tgbotapi.Message{
 		Chat: &tgbotapi.Chat{Title: "чат"},
@@ -88,7 +88,7 @@ func TestChatDoesNotRepeatTheCurrentMessage(t *testing.T) {
 		{Username: "petya", Text: "привет"},
 		{Username: "vasya", Text: "как дела"},
 	}
-	if _, err := h.Chat(context.Background(), msg, history); err != nil {
+	if _, err := h.Chat(context.Background(), "sys", msg, history); err != nil {
 		t.Fatal(err)
 	}
 	if n := strings.Count(client.capturedUser, "как дела"); n != 1 {
@@ -100,14 +100,14 @@ func TestChatDoesNotRepeatTheCurrentMessage(t *testing.T) {
 // отвечает.
 func TestChatFallsBackToTheMessageWhenHistoryIsEmpty(t *testing.T) {
 	client := &mockLLM{response: "ок"}
-	h := handlers.NewTextHandler(client, "sys")
+	h := handlers.NewTextHandler(client)
 
 	msg := &tgbotapi.Message{
 		Chat: &tgbotapi.Chat{Title: "чат"},
 		From: &tgbotapi.User{UserName: "vasya"},
 		Text: "как дела",
 	}
-	if _, err := h.Chat(context.Background(), msg, nil); err != nil {
+	if _, err := h.Chat(context.Background(), "sys", msg, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(client.capturedUser, "как дела") {
@@ -118,11 +118,11 @@ func TestChatFallsBackToTheMessageWhenHistoryIsEmpty(t *testing.T) {
 // Картинка без подписи не должна превращаться в пустой ход.
 func TestMediaWithoutTextIsDescribed(t *testing.T) {
 	client := &mockLLM{response: "ок"}
-	h := handlers.NewTextHandler(client, "sys")
+	h := handlers.NewTextHandler(client)
 
 	msg := &tgbotapi.Message{Chat: &tgbotapi.Chat{Title: "чат"}, From: &tgbotapi.User{UserName: "vasya"}}
 	history := []store.ContextMessage{{Username: "petya", MediaType: "photo"}}
-	if _, err := h.Chat(context.Background(), msg, history); err != nil {
+	if _, err := h.Chat(context.Background(), "sys", msg, history); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(client.capturedUser, "картинку") {

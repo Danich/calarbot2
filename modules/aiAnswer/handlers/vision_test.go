@@ -34,10 +34,10 @@ func (m *mockPersonaLLM) Complete(_ context.Context, system, user string) (strin
 }
 
 func TestVisionHandler_Describe_noPersona(t *testing.T) {
-	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, nil, "")
+	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, nil)
 	msg := &tgbotapi.Message{Caption: "что это?"}
 
-	got, err := h.Describe(context.Background(), msg, "https://cdn.telegram.org/file/photos/test.jpg")
+	got, err := h.Describe(context.Background(), "", msg, "https://cdn.telegram.org/file/photos/test.jpg")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -48,10 +48,10 @@ func TestVisionHandler_Describe_noPersona(t *testing.T) {
 
 func TestVisionHandler_Describe_withPersona(t *testing.T) {
 	persona := &mockPersonaLLM{response: "arrr, a fluffy cat it be!"}
-	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, persona, "You are a pirate.")
+	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, persona)
 
 	msg := &tgbotapi.Message{Caption: "что это?"}
-	got, err := h.Describe(context.Background(), msg, "https://cdn.telegram.org/file/photos/test.jpg")
+	got, err := h.Describe(context.Background(), "You are a pirate.", msg, "https://cdn.telegram.org/file/photos/test.jpg")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -70,10 +70,10 @@ func TestVisionHandler_Describe_withPersona(t *testing.T) {
 
 func TestVisionHandler_Describe_personaErrorFallback(t *testing.T) {
 	persona := &mockPersonaLLM{err: errors.New("persona down")}
-	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, persona, "sys")
+	h := handlers.NewVisionHandler(&mockVision{desc: "a fluffy cat"}, persona)
 
 	msg := &tgbotapi.Message{}
-	got, err := h.Describe(context.Background(), msg, "https://cdn.telegram.org/file/photos/test.jpg")
+	got, err := h.Describe(context.Background(), "sys", msg, "https://cdn.telegram.org/file/photos/test.jpg")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -83,9 +83,9 @@ func TestVisionHandler_Describe_personaErrorFallback(t *testing.T) {
 }
 
 func TestVisionHandler_Describe_noPhotoURL(t *testing.T) {
-	h := handlers.NewVisionHandler(&mockVision{desc: "irrelevant"}, nil, "")
+	h := handlers.NewVisionHandler(&mockVision{desc: "irrelevant"}, nil)
 	msg := &tgbotapi.Message{Text: "hello"}
-	_, err := h.Describe(context.Background(), msg, "")
+	_, err := h.Describe(context.Background(), "", msg, "")
 	if err == nil {
 		t.Error("expected error when no photo URL provided")
 	}

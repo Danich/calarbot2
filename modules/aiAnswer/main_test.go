@@ -1,11 +1,13 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/common"
+	"calarbot2/modules/aiAnswer/store"
 )
 
 func TestModuleOrder(t *testing.T) {
@@ -97,6 +99,43 @@ func TestModuleIsCalledDirectMentionAlwaysTrue(t *testing.T) {
 	}
 	if !m.IsCalled(msg) {
 		t.Error("IsCalled with @mention should always return true (direct address)")
+	}
+}
+
+func TestSystemPromptCarriesPersonaAndLore(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	s, err := store.New(path)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	p, _, _ := s.UpsertConfigPersona("mamkin", "mamkin", "ты Мамкин")
+	s.EnsureLoreCursorAt(100, p.ID, 0)
+	s.AppendLore(100, p.ID, []string{"нашёл оливье"}, 1)
+	s.Close()
+
+	m := NewModule(1, AIConfig{
+		SystemPrompt:   "ты Мамкин",
+		DefaultPersona: "mamkin",
+		LoreWindow:     20,
+		SQLitePath:     path,
+	})
+	defer m.cancelRefresh()
+
+	_, system := m.systemPromptFor(100)
+	if !strings.Contains(system, "ты Мамкин") {
+		t.Error("canon missing from the system prompt")
+	}
+	if !strings.Contains(system, "нашёл оливье") {
+		t.Error("lore missing from the system prompt")
+	}
+}
+
+func TestSystemPromptFallsBackWithoutStore(t *testing.T) {
+	m := NewModule(1, AIConfig{SystemPrompt: "ты Мамкин"})
+	defer m.cancelRefresh()
+
+	if _, system := m.systemPromptFor(100); system != "ты Мамкин" {
+		t.Errorf("system = %q, want the config prompt verbatim", system)
 	}
 }
 
