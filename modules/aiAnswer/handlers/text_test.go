@@ -72,3 +72,60 @@ func TestTextHandlerTranslateUsesTranslationPrompt(t *testing.T) {
 		t.Errorf("user message missing original text: %q", llm.capturedUser)
 	}
 }
+
+// Текущее сообщение уже лежит в истории — его записали до решения отвечать.
+// Дописывать его отдельно значит показать модели один и тот же ход дважды.
+func TestChatDoesNotRepeatTheCurrentMessage(t *testing.T) {
+	client := &mockLLM{response: "ок"}
+	h := handlers.NewTextHandler(client, "sys")
+
+	msg := &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{Title: "чат"},
+		From: &tgbotapi.User{UserName: "vasya"},
+		Text: "как дела",
+	}
+	history := []store.ContextMessage{
+		{Username: "petya", Text: "привет"},
+		{Username: "vasya", Text: "как дела"},
+	}
+	if _, err := h.Chat(context.Background(), msg, history); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(client.capturedUser, "как дела"); n != 1 {
+		t.Fatalf("сообщение встречается в промпте %d раз, ожидался один:\n%s", n, client.capturedUser)
+	}
+}
+
+// Записать не удалось, история пуста — модель всё равно должна увидеть, на что
+// отвечает.
+func TestChatFallsBackToTheMessageWhenHistoryIsEmpty(t *testing.T) {
+	client := &mockLLM{response: "ок"}
+	h := handlers.NewTextHandler(client, "sys")
+
+	msg := &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{Title: "чат"},
+		From: &tgbotapi.User{UserName: "vasya"},
+		Text: "как дела",
+	}
+	if _, err := h.Chat(context.Background(), msg, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(client.capturedUser, "как дела") {
+		t.Fatalf("сообщение потерялось:\n%s", client.capturedUser)
+	}
+}
+
+// Картинка без подписи не должна превращаться в пустой ход.
+func TestMediaWithoutTextIsDescribed(t *testing.T) {
+	client := &mockLLM{response: "ок"}
+	h := handlers.NewTextHandler(client, "sys")
+
+	msg := &tgbotapi.Message{Chat: &tgbotapi.Chat{Title: "чат"}, From: &tgbotapi.User{UserName: "vasya"}}
+	history := []store.ContextMessage{{Username: "petya", MediaType: "photo"}}
+	if _, err := h.Chat(context.Background(), msg, history); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(client.capturedUser, "картинку") {
+		t.Fatalf("медиа осталось пустым ходом:\n%s", client.capturedUser)
+	}
+}

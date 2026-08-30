@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -140,7 +141,25 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	return roll >= m.config.AnswerLevel
 }
 
+// Answer отвечает и запоминает собственный ответ: без этого в контексте видны
+// только реплики людей, и на реплай боту модель видит ответ, но не видит, на
+// что он был.
 func (m *Module) Answer(payload *botModules.Payload) (botModules.RichAnswer, error) {
+	answer, err := m.answer(payload)
+	if err != nil || answer.Text == "" || m.store == nil {
+		return answer, err
+	}
+	if saveErr := m.store.SaveBotMessage(
+		payload.Msg.Chat.ID, m.config.BotUsername, answer.Text, time.Now().Unix(),
+	); saveErr != nil {
+		// Не роняем ответ из-за незаписанной истории: сказать сейчас важнее,
+		// чем помнить потом.
+		log.Printf("store.SaveBotMessage: %v", saveErr)
+	}
+	return answer, err
+}
+
+func (m *Module) answer(payload *botModules.Payload) (botModules.RichAnswer, error) {
 	ctx := context.Background()
 	msg := payload.Msg
 
