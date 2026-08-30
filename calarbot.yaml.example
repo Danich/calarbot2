@@ -1,4 +1,5 @@
 tgTokenFile: /.tgtoken
+adminId: 0            # telegram user id, куда notify шлёт сообщения
 modules:
   simpleReply:
     url: "http://simpleReply:8080"

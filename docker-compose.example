@@ -68,3 +68,18 @@ services:
     volumes:
       - /opt/calarbot/tokens/aiConfig.yaml:/aiConfig.yaml
       - /opt/calarbot/data:/data
+
+  notify:
+    build:
+      context: .
+      dockerfile: notify/Dockerfile
+    image: calarbot2-notify:latest
+    restart: unless-stopped
+    command: ["./notify"]
+    environment:
+      - NOTIFY_PORT=8080
+    ports:
+      - "127.0.0.1:8091:8080"
+    volumes:
+      - /opt/calarbot/calarbot.yaml:/calarbot.yaml
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken
