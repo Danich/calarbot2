@@ -71,9 +71,22 @@ func (s *Store) SaveMessage(msg *tgbotapi.Message) error {
 	return err
 }
 
+// SaveBotMessage records what the bot itself said.
+//
+// Без этого в контексте видны только реплики людей: движок отправляет ответ и
+// никуда его не кладёт, модуль о нём не узнаёт. Когда человек отвечает боту — а
+// это самый частый повод заговорить, — модель видит ответ и не видит, на что он.
+func (s *Store) SaveBotMessage(chatID int64, username, text string, ts int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO messages (chat_id, user_id, username, text, media_type, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+		chatID, 0, username, text, "", ts,
+	)
+	return err
+}
+
 func (s *Store) GetContext(chatID int64, limit int) ([]ContextMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT username, text, media_type FROM messages WHERE chat_id = ? ORDER BY ts DESC LIMIT ?`,
+		`SELECT username, text, media_type FROM messages WHERE chat_id = ? ORDER BY ts DESC, id DESC LIMIT ?`,
 		chatID, limit,
 	)
 	if err != nil {

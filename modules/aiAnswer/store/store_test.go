@@ -117,3 +117,56 @@ func TestMeta(t *testing.T) {
 		t.Errorf("upsert: got %q, want value2", val)
 	}
 }
+
+// Свои реплики тоже должны попадать в контекст: иначе на реплай боту модель
+// видит ответ человека и не видит, на что он был.
+func TestSaveBotMessageJoinsTheContext(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.SaveMessage(&tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: 7}, From: &tgbotapi.User{ID: 1, UserName: "vasya"},
+		Text: "привет", Date: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveBotMessage(7, "calarbot", "здорово", 101); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetContext(7, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("в контексте %d сообщений, ожидалось два: %+v", len(got), got)
+	}
+	if got[1].Username != "calarbot" || got[1].Text != "здорово" {
+		t.Errorf("ответ бота не в контексте: %+v", got)
+	}
+}
+
+// В одну секунду может прийти несколько сообщений. Без вторичного ключа их
+// порядок произволен, и разговор в промпте перемешивается.
+func TestGetContextIsStableWithinASecond(t *testing.T) {
+	s := newTestStore(t)
+	for _, text := range []string{"раз", "два", "три"} {
+		if err := s.SaveMessage(&tgbotapi.Message{
+			Chat: &tgbotapi.Chat{ID: 9}, From: &tgbotapi.User{ID: 1, UserName: "vasya"},
+			Text: text, Date: 500,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.GetContext(9, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, m := range got {
+		order = append(order, m.Text)
+	}
+	if len(order) != 3 || order[0] != "раз" || order[1] != "два" || order[2] != "три" {
+		t.Fatalf("порядок в одной секунде разъехался: %v", order)
+	}
+}

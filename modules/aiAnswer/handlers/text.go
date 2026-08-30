@@ -29,12 +29,33 @@ func buildContextPrompt(chatTitle string, history []store.ContextMessage, msg *t
 	sb.WriteString(chatTitle)
 	sb.WriteString(":\n")
 	for _, m := range history {
-		sb.WriteString(fmt.Sprintf(" from %s: %s\n", m.Username, m.Text))
+		sb.WriteString(fmt.Sprintf(" from %s: %s\n", m.Username, describe(m)))
 	}
-	if msg.From != nil {
+	// Текущее сообщение уже лежит в history: его записали в IsCalled, до того
+	// как решили отвечать. Дописывать его отдельно значит показать модели один
+	// и тот же ход дважды. Ветка ниже — на случай, когда записать не удалось и
+	// история пуста.
+	if len(history) == 0 && msg.From != nil {
 		sb.WriteString(fmt.Sprintf(" from %s: %s", msg.From.UserName, msg.Text))
 	}
 	return sb.String()
+}
+
+// describe отдаёт текст сообщения, а для медиа без подписи — пометку о том, что
+// это было. Иначе картинка превращается в пустой ход «from vasya: », и модель
+// видит в разговоре дырку вместо события.
+func describe(m store.ContextMessage) string {
+	if m.Text != "" {
+		return m.Text
+	}
+	switch m.MediaType {
+	case "photo":
+		return "[прислал картинку]"
+	case "sticker":
+		return "[прислал стикер]"
+	default:
+		return m.Text
+	}
 }
 
 func chatTitle(msg *tgbotapi.Message) string {
