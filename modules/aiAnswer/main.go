@@ -42,6 +42,27 @@ type AIConfig struct {
 	SQLitePath    string `yaml:"sqlite_path"`
 }
 
+// factualSystemPrompt — то, с чем работает внутренняя модель, когда персона
+// включена.
+//
+// Роль ей не нужна: персонажем занимается пересказ. Когда образ давали обеим,
+// первая писала характерный многословный ответ с предысторией, а вторая
+// пересказывала в образе текст, уже набитый ею же, и усиливала. Спека
+// персона-пайплайна с самого начала описывала внутреннюю модель как источник
+// фактического ответа — код просто отдавал ей заодно и роль.
+const factualSystemPrompt = `Отвечай коротко и по существу, одной-двумя фразами.
+Не играй роль, не добавляй эмоций и не представляйся: твой ответ перескажет
+другая модель от лица персонажа.`
+
+// innerSystemPrompt возвращает промпт для модели, дающей фактический ответ.
+func innerSystemPrompt(config AIConfig) string {
+	if config.PersonaModel != "" {
+		return factualSystemPrompt
+	}
+	// Персоны нет — значит роль играть некому, кроме этой модели.
+	return config.SystemPrompt
+}
+
 type Module struct {
 	order         int
 	config        AIConfig
@@ -102,7 +123,7 @@ func NewModule(order int, config AIConfig) *Module {
 		config:        config,
 		store:         s,
 		router:        router.New(orClient),
-		textHandler:   handlers.NewTextHandler(textLLM, config.SystemPrompt),
+		textHandler:   handlers.NewTextHandler(textLLM, innerSystemPrompt(config)),
 		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona, config.SystemPrompt),
 		imageHandler:  handlers.NewImageGenHandler(imgClient),
 		cancelRefresh: cancel,

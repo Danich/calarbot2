@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -133,5 +134,30 @@ func TestExtractMentions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Роль играет только пересказ. Когда образ давали и внутренней модели, она
+// писала характерный многословный ответ с предысторией, а персона пересказывала
+// в образе текст, уже набитый ею же, — отсюда два абзаца и коридоры ММВБ в
+// каждой реплике.
+func TestInnerModelDropsTheRoleWhenPersonaIsOn(t *testing.T) {
+	character := "Ты - младший финансист Семён Мамкин."
+
+	got := innerSystemPrompt(AIConfig{SystemPrompt: character, PersonaModel: "some/model"})
+	if got == character {
+		t.Fatal("внутренней модели достался промпт персонажа — роль отыграется дважды")
+	}
+	if !strings.Contains(got, "коротко") {
+		t.Errorf("нейтральный промпт не просит краткости: %q", got)
+	}
+}
+
+// Без персоны отыгрывать роль больше некому.
+func TestInnerModelKeepsTheRoleWithoutPersona(t *testing.T) {
+	character := "Ты - младший финансист Семён Мамкин."
+
+	if got := innerSystemPrompt(AIConfig{SystemPrompt: character}); got != character {
+		t.Fatalf("без персоны внутренняя модель должна играть роль сама, получила %q", got)
 	}
 }
