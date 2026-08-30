@@ -34,6 +34,7 @@ type AIConfig struct {
 
 	DefaultPersona string `yaml:"default_persona"`
 	LoreWindow     int    `yaml:"lore_window"`
+	LoreModel      string `yaml:"lore_model"`
 
 	OpenRouterKey     string `yaml:"openrouter_key"`
 	NebiusKey         string `yaml:"nebius_key"`
@@ -55,6 +56,7 @@ type Module struct {
 	textHandler   *handlers.TextHandler
 	visionHandler *handlers.VisionHandler
 	imageHandler  *handlers.ImageGenHandler
+	loreRunner    *lore.Runner
 	cancelRefresh context.CancelFunc
 }
 
@@ -123,6 +125,15 @@ func NewModule(order int, config AIConfig) *Module {
 		visionPersona = personaOR
 	}
 
+	var loreRunner *lore.Runner
+	if s != nil {
+		loreLLM := orClient
+		if config.LoreModel != "" {
+			loreLLM = models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.LoreModel), "")
+		}
+		loreRunner = lore.NewRunner(s, lore.NewExtractor(loreLLM), config.ContextSize)
+	}
+
 	return &Module{
 		order:         order,
 		config:        config,
@@ -131,6 +142,7 @@ func NewModule(order int, config AIConfig) *Module {
 		textHandler:   handlers.NewTextHandler(textLLM),
 		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona),
 		imageHandler:  handlers.NewImageGenHandler(imgClient),
+		loreRunner:    loreRunner,
 		cancelRefresh: cancel,
 	}
 }
@@ -177,6 +189,13 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	if m.store != nil {
 		if err := m.store.SaveMessage(msg); err != nil {
 			log.Printf("store.SaveMessage: %v", err)
+		}
+	}
+	// Лор растёт на каждом сообщении чата, а не только когда бот отвечает:
+	// IsCalled видит весь поток, и никакого расписания для этого не нужно.
+	if m.store != nil && m.loreRunner != nil && msg.Chat != nil {
+		if p, err := m.store.ResolvePersona(msg.Chat.ID, m.config.DefaultPersona); err == nil {
+			m.loreRunner.Maybe(msg.Chat.ID, p.ID, p.SystemPrompt)
 		}
 	}
 	if isDirectAddress(msg, m.config.BotUsername) {
