@@ -9,26 +9,27 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
 )
 
-// NebiusClient wraps the Nebius AI API for vision (image description) and image generation.
+// NebiusClient wraps the Nebius AI API for vision (image description).
+//
+// Генерация картинок отсюда уехала: Nebius её больше не предоставляет — в
+// каталоге не осталось ни одной такой модели. Рисованием занимается
+// ImageClient, который смотрит на другого провайдера.
 type NebiusClient struct {
-	apiKey        string
-	baseURL       string
-	visionModel   string
-	imageGenModel string
-	httpClient    *http.Client
+	apiKey      string
+	baseURL     string
+	visionModel string
+	httpClient  *http.Client
 }
 
 // NewNebiusClient creates a new NebiusClient.
-func NewNebiusClient(apiKey, baseURL, visionModel, imageGenModel string) *NebiusClient {
+func NewNebiusClient(apiKey, baseURL, visionModel string) *NebiusClient {
 	return &NebiusClient{
-		apiKey:        apiKey,
-		baseURL:       baseURL,
-		visionModel:   visionModel,
-		imageGenModel: imageGenModel,
-		httpClient:    &http.Client{},
+		apiKey:      apiKey,
+		baseURL:     baseURL,
+		visionModel: visionModel,
+		httpClient:  &http.Client{},
 	}
 }
 
@@ -66,27 +67,6 @@ func (c *NebiusClient) DescribeImage(ctx context.Context, fileURL, prompt string
 		return "", err
 	}
 	return res.Choices[0].Message.Content, nil
-}
-
-// GenerateImage creates an image from the prompt using the Nebius image-generation model
-// and returns the URL of the first generated image.
-func (c *NebiusClient) GenerateImage(ctx context.Context, prompt string) (string, error) {
-	cl := c.newClient()
-	res, err := cl.Images.Generate(ctx, openai.ImageGenerateParams{
-		Prompt: prompt,
-		Model:  openai.ImageModel(c.imageGenModel),
-		N:      param.NewOpt[int64](1),
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(res.Data) == 0 {
-		return "", fmt.Errorf("no image returned from Nebius")
-	}
-	if res.Data[0].URL == "" {
-		return "", fmt.Errorf("empty URL in Nebius response")
-	}
-	return res.Data[0].URL, nil
 }
 
 func (c *NebiusClient) downloadFile(ctx context.Context, fileURL string) ([]byte, error) {

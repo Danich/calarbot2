@@ -30,13 +30,16 @@ type AIConfig struct {
 	SystemPrompt string `yaml:"system_prompt"`
 	ContextSize  int    `yaml:"context_size"`
 
-	OpenRouterKey       string `yaml:"openrouter_key"`
-	NebiusKey           string `yaml:"nebius_key"`
-	NebiusURL           string `yaml:"nebius_url"`
-	NebiusVisionModel   string `yaml:"nebius_vision_model"`
-	NebiusImageGenModel string `yaml:"nebius_imagegen_model"`
-	PersonaModel        string `yaml:"persona_model"`
-	SQLitePath          string `yaml:"sqlite_path"`
+	OpenRouterKey     string `yaml:"openrouter_key"`
+	NebiusKey         string `yaml:"nebius_key"`
+	NebiusURL         string `yaml:"nebius_url"`
+	NebiusVisionModel string `yaml:"nebius_vision_model"`
+	// Рисование живёт у отдельного провайдера: Nebius генерацию убрал.
+	ImageGenURL   string `yaml:"imagegen_url"`
+	ImageGenKey   string `yaml:"imagegen_key"`
+	ImageGenModel string `yaml:"imagegen_model"`
+	PersonaModel  string `yaml:"persona_model"`
+	SQLitePath    string `yaml:"sqlite_path"`
 }
 
 type Module struct {
@@ -81,7 +84,8 @@ func NewModule(order int, config AIConfig) *Module {
 	sel.StartRefresh(ctx)
 
 	orClient := models.NewOpenRouterClient(config.OpenRouterKey, sel, "")
-	nbClient := models.NewNebiusClient(config.NebiusKey, config.NebiusURL, config.NebiusVisionModel, config.NebiusImageGenModel)
+	nbClient := models.NewNebiusClient(config.NebiusKey, config.NebiusURL, config.NebiusVisionModel)
+	imgClient := models.NewImageClient(config.ImageGenKey, config.ImageGenURL, config.ImageGenModel)
 
 	// textLLM and visionPersona are the OpenRouter client by default;
 	// if persona_model is set, wrap text responses in a character persona.
@@ -100,7 +104,7 @@ func NewModule(order int, config AIConfig) *Module {
 		router:        router.New(orClient),
 		textHandler:   handlers.NewTextHandler(textLLM, config.SystemPrompt),
 		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona, config.SystemPrompt),
-		imageHandler:  handlers.NewImageGenHandler(nbClient),
+		imageHandler:  handlers.NewImageGenHandler(imgClient),
 		cancelRefresh: cancel,
 	}
 }
