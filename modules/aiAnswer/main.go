@@ -35,6 +35,7 @@ type AIConfig struct {
 	NebiusURL           string `yaml:"nebius_url"`
 	NebiusVisionModel   string `yaml:"nebius_vision_model"`
 	NebiusImageGenModel string `yaml:"nebius_imagegen_model"`
+	PersonaModel        string `yaml:"persona_model"`
 	SQLitePath          string `yaml:"sqlite_path"`
 }
 
@@ -82,13 +83,23 @@ func NewModule(order int, config AIConfig) *Module {
 	orClient := models.NewOpenRouterClient(config.OpenRouterKey, sel, "")
 	nbClient := models.NewNebiusClient(config.NebiusKey, config.NebiusURL, config.NebiusVisionModel, config.NebiusImageGenModel)
 
+	// textLLM and visionPersona are the OpenRouter client by default;
+	// if persona_model is set, wrap text responses in a character persona.
+	var textLLM models.Completer = orClient
+	var visionPersona handlers.LLMClient
+	if config.PersonaModel != "" {
+		personaOR := models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.PersonaModel), "")
+		textLLM = models.NewPersonaClient(orClient, personaOR, config.SystemPrompt)
+		visionPersona = personaOR
+	}
+
 	return &Module{
 		order:         order,
 		config:        config,
 		store:         s,
 		router:        router.New(orClient),
-		textHandler:   handlers.NewTextHandler(orClient, config.SystemPrompt),
-		visionHandler: handlers.NewVisionHandler(nbClient),
+		textHandler:   handlers.NewTextHandler(textLLM, config.SystemPrompt),
+		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona, config.SystemPrompt),
 		imageHandler:  handlers.NewImageGenHandler(nbClient),
 		cancelRefresh: cancel,
 	}
