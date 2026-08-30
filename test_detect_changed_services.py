@@ -56,3 +56,9 @@ class DetectServicesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_notify_is_detected():
+    """Без своей ветки сервис никогда не пересобрался бы пайплайном — ровно
+    так уже было с sberify-service."""
+    assert detect_services(["notify/main.go"]) == {"notify"}

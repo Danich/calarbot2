@@ -18,6 +18,10 @@ def detect_services(files: List[str]) -> Set[str]:
         # here, so changes to it were never deployed.
         elif file.startswith("sberify-service/"):
             services.add("sberify-service")
+        # notify лежит верхним уровнем, а не в modules/, потому что это не
+        # BotModule. Без этой ветки он был бы здесь невидим.
+        elif file.startswith("notify/"):
+            services.add("notify")
         elif file.startswith("modules/"):
             parts = file.split("/")
             if len(parts) > 1:
