@@ -8,8 +8,15 @@ type Payload struct {
 }
 
 type RichAnswer struct {
-	Text     string
+	Text string
+	// PhotoURL — картинка, за которой телеграм сходит сам.
 	PhotoURL string
+	// Photo — готовые байты картинки, когда ссылки не существует: провайдеры
+	// генерации отдают base64, а не URL, и хостить это негде.
+	//
+	// json маршалит []byte в base64 и обратно, так что по проводу между
+	// модулем и движком оно едет без отдельной возни.
+	Photo []byte
 }
 
 type BotModule interface {

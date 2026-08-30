@@ -2,6 +2,7 @@ package models_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,19 +23,23 @@ func TestImageClientGenerateImage(t *testing.T) {
 		gotModel = body.Model
 
 		w.Header().Set("Content-Type", "application/json")
+		// Именно b64_json: OpenRouter отдаёт картинку только так, поля url в
+		// его ответе нет вовсе.
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []map[string]string{{"url": "https://example.com/generated.jpg"}},
+			"data": []map[string]string{
+				{"b64_json": base64.StdEncoding.EncodeToString([]byte("PNGDATA"))},
+			},
 		})
 	}))
 	defer apiServer.Close()
 
 	client := models.NewImageClient("test-key", apiServer.URL+"/", "some/image-model")
-	url, err := client.GenerateImage(context.Background(), "a dog in a park")
+	img, err := client.GenerateImage(context.Background(), "a dog in a park")
 	if err != nil {
 		t.Fatalf("GenerateImage: %v", err)
 	}
-	if url != "https://example.com/generated.jpg" {
-		t.Errorf("got %q, want %q", url, "https://example.com/generated.jpg")
+	if string(img) != "PNGDATA" {
+		t.Errorf("got %q, want %q", img, "PNGDATA")
 	}
 	if !strings.HasSuffix(gotPath, "/images/generations") {
 		t.Errorf("запрос ушёл на %q, а не на images/generations", gotPath)
@@ -70,5 +75,44 @@ func TestImageClientReportsAnEmptyResponse(t *testing.T) {
 	client := models.NewImageClient("k", apiServer.URL+"/", "some/image-model")
 	if _, err := client.GenerateImage(context.Background(), "a dog"); err == nil {
 		t.Fatal("пустой ответ не превратился в ошибку")
+	}
+}
+
+// Ветка для провайдеров, которые всё-таки отдают ссылку.
+func TestImageClientFollowsAURLWhenThereIsOne(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("PNGDATA"))
+	}))
+	defer fileServer.Close()
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]string{{"url": fileServer.URL + "/img.png"}},
+		})
+	}))
+	defer apiServer.Close()
+
+	client := models.NewImageClient("k", apiServer.URL+"/", "some/image-model")
+	img, err := client.GenerateImage(context.Background(), "a dog")
+	if err != nil {
+		t.Fatalf("GenerateImage: %v", err)
+	}
+	if string(img) != "PNGDATA" {
+		t.Errorf("got %q", img)
+	}
+}
+
+// Ответ без картинки вообще — это ошибка, а не пустой успех.
+func TestImageClientRejectsAResponseWithNeither(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{}]}`))
+	}))
+	defer apiServer.Close()
+
+	client := models.NewImageClient("k", apiServer.URL+"/", "some/image-model")
+	if _, err := client.GenerateImage(context.Background(), "a dog"); err == nil {
+		t.Fatal("ответ без байтов и без ссылки не превратился в ошибку")
 	}
 }

@@ -60,13 +60,14 @@ func (c *ModuleClient) Answer(msg *Payload) (RichAnswer, error) {
 	var result struct {
 		Answer   string `json:"answer"`
 		PhotoURL string `json:"photo_url,omitempty"`
+		Photo    []byte `json:"photo,omitempty"`
 		Error    string `json:"error,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return RichAnswer{}, err
 	}
 	if result.Error != "" {
-		return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL}, fmt.Errorf("%s", result.Error)
+		return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL, Photo: result.Photo}, fmt.Errorf("%s", result.Error)
 	}
-	return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL}, nil
+	return RichAnswer{Text: result.Answer, PhotoURL: result.PhotoURL, Photo: result.Photo}, nil
 }

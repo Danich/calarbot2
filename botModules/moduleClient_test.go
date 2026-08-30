@@ -301,3 +301,58 @@ func TestModuleClientAnswer(t *testing.T) {
 		})
 	}
 }
+
+// photoModule отвечает картинкой в байтах и ничем больше.
+type photoModule struct{ img []byte }
+
+func (m photoModule) Order() int                          { return 1 }
+func (m photoModule) IsCalled(*tgbotapi.Message) bool     { return true }
+func (m photoModule) Answer(*Payload) (RichAnswer, error) { return RichAnswer{Photo: m.img}, nil }
+
+// Байты картинки едут от модуля к движку через JSON, и это единственное место,
+// где они могут молча потеряться: до этой ручки генератор отдаёт base64, после
+// неё телеграм ждёт байты. Тест гоняет настоящий сервер модуля и настоящего
+// клиента, а не мок с одной стороны.
+func TestModuleClientCarriesPhotoBytes(t *testing.T) {
+	img := []byte{0x89, 'P', 'N', 'G', 0x00, 0xFF, 0xFE, 0x01}
+
+	server, errChan := ServeModule(photoModule{img: img}, "127.0.0.1:0")
+	defer server.Close()
+	select {
+	case err := <-errChan:
+		if err != nil && err != http.ErrServerClosed {
+			t.Fatalf("сервер модуля: %v", err)
+		}
+	default:
+	}
+
+	ts := httptest.NewServer(server.Handler)
+	defer ts.Close()
+
+	client := &ModuleClient{BaseURL: ts.URL}
+	answer, err := client.Answer(&Payload{Msg: &tgbotapi.Message{}})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if string(answer.Photo) != string(img) {
+		t.Fatalf("картинка приехала как %v, а отправлялась %v", answer.Photo, img)
+	}
+}
+
+// Модуль без картинки не должен присылать пустое поле, которое движок примет
+// за картинку нулевой длины.
+func TestModuleClientLeavesPhotoEmptyWhenThereIsNone(t *testing.T) {
+	server, _ := ServeModule(photoModule{}, "127.0.0.1:0")
+	defer server.Close()
+
+	ts := httptest.NewServer(server.Handler)
+	defer ts.Close()
+
+	answer, err := (&ModuleClient{BaseURL: ts.URL}).Answer(&Payload{Msg: &tgbotapi.Message{}})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if len(answer.Photo) != 0 {
+		t.Fatalf("ожидалась пустая картинка, приехало %d байт", len(answer.Photo))
+	}
+}
