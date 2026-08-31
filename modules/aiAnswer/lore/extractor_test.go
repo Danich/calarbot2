@@ -95,3 +95,52 @@ func TestExtractPropagatesModelError(t *testing.T) {
 		t.Error("want the model error to propagate so the cursor stays put")
 	}
 }
+
+// Автоподобранная бесплатная модель форматирует список как ей вздумается —
+// парсер обязан понимать не только заказанный дефис.
+func TestExtractAcceptsCommonBulletMarkers(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply string
+	}{
+		{"bullet dot", "• нашёл оливье\n• обещал схему этажей"},
+		{"asterisk", "* нашёл оливье\n* обещал схему этажей"},
+		{"numbered", "1. нашёл оливье\n2. обещал схему этажей"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			llm := &stubLLM{reply: c.reply}
+			got, err := lore.NewExtractor(llm).Extract(context.Background(), "canon", msgs("привет"), nil)
+			if err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			if len(got) != 2 || got[0] != "нашёл оливье" {
+				t.Errorf("got %#v", got)
+			}
+		})
+	}
+}
+
+// Ответ без единой распознанной строки и без NONE ближе к сбою модели, чем к
+// «ничего не произошло»: курсор не должен двигаться на такой пачке.
+func TestExtractErrorsOnUnparseableReply(t *testing.T) {
+	llm := &stubLLM{reply: "Не могу сказать ничего конкретного о произошедшем."}
+	got, err := lore.NewExtractor(llm).Extract(context.Background(), "canon", msgs("привет"), nil)
+	if err == nil {
+		t.Fatalf("want an error for a prose-only reply, got events=%#v", got)
+	}
+}
+
+// NONE остаётся валидным ответом в любом регистре и с точкой на конце.
+func TestExtractNoneIsCaseAndPunctuationInsensitive(t *testing.T) {
+	for _, reply := range []string{"NONE", "none", "None.", " NONE "} {
+		llm := &stubLLM{reply: reply}
+		got, err := lore.NewExtractor(llm).Extract(context.Background(), "canon", msgs("привет"), nil)
+		if err != nil {
+			t.Fatalf("reply %q: Extract: %v", reply, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("reply %q: got %#v, want nothing", reply, got)
+		}
+	}
+}

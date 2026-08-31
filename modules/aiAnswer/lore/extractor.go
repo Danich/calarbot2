@@ -6,6 +6,7 @@ package lore
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"calarbot2/modules/aiAnswer/store"
@@ -65,7 +66,14 @@ func (e *Extractor) Extract(ctx context.Context, canon string, msgs []store.Cont
 	if err != nil {
 		return nil, fmt.Errorf("extract: %w", err)
 	}
-	return parseEvents(raw), nil
+	events, ok := parseEvents(raw)
+	if !ok {
+		// Ответ не NONE, но ни одной строки не разобралось: это ближе к сбою
+		// модели, чем к «ничего не произошло». Не двигаем курсор — иначе
+		// пачка молча уедет из памяти без единой строки лора.
+		return nil, fmt.Errorf("extract: no events parsed from reply: %q", raw)
+	}
+	return events, nil
 }
 
 func buildExtractPrompt(canon string, msgs []store.ContextMessage, recent []store.LoreRecord) string {
@@ -102,19 +110,29 @@ func describe(m store.ContextMessage) string {
 	return ""
 }
 
+// bulletPrefixes — маркеры списка, которые терпит парсер: заказан "- ", но
+// автоподобранная бесплатная модель с равной вероятностью выдаёт "•", "*" или
+// нумерованный список.
+var bulletPrefixes = []string{"-", "•", "*"}
+
 // parseEvents терпим к мусору: бесплатные модели любят добавить преамбулу и
 // прощание, и это не повод потерять пачку.
-func parseEvents(raw string) []string {
+//
+// Второй результат — false означает «ответ не NONE, но ни одна строка не
+// разобралась как событие». Такой ответ ближе к сбою модели, чем к «ничего не
+// произошло», и вызывающий код обязан не двигать курсор на этом результате.
+func parseEvents(raw string) ([]string, bool) {
 	if strings.EqualFold(strings.TrimSpace(strings.Trim(raw, ". ")), "NONE") {
-		return nil
+		return nil, true
 	}
 	var out []string
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "-") {
+		rest, ok := stripBullet(line)
+		if !ok {
 			continue
 		}
-		line = strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		line = strings.TrimSpace(rest)
 		if line == "" || strings.EqualFold(line, "NONE") {
 			continue
 		}
@@ -126,5 +144,22 @@ func parseEvents(raw string) []string {
 			break
 		}
 	}
-	return out
+	return out, len(out) > 0
+}
+
+// stripBullet узнаёт и срезает маркер списка: дефис, точку-буллет, звёздочку
+// или нумерованный пункт вида "1.". ok=false — маркера нет вовсе, строка не
+// про событие.
+func stripBullet(line string) (string, bool) {
+	for _, p := range bulletPrefixes {
+		if strings.HasPrefix(line, p) {
+			return strings.TrimPrefix(line, p), true
+		}
+	}
+	if i := strings.IndexByte(line, '.'); i > 0 {
+		if _, err := strconv.Atoi(line[:i]); err == nil {
+			return line[i+1:], true
+		}
+	}
+	return "", false
 }

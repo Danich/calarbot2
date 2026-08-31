@@ -106,6 +106,24 @@ func TestRunnerKeepsCursorOnModelError(t *testing.T) {
 	}
 }
 
+// Пачка, которую модель не смогла нормально разобрать (не NONE и без единой
+// строки-события), не должна тихо съесть сообщения из памяти: курсор остаётся
+// на месте, как и при явной ошибке модели.
+func TestRunnerKeepsCursorOnUnparseableReply(t *testing.T) {
+	s := runnerStore(t, 100, 40)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	llm := &stubLLM{reply: "Простите, не могу разобрать, что тут произошло."}
+
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
+	if err := r.Run(context.Background(), 100, 7, "canon"); err == nil {
+		t.Fatal("want an error for a prose-only reply")
+	}
+	batch, _ := s.RipeMessages(100, 7, 10, 50)
+	if len(batch.Messages) == 0 {
+		t.Error("cursor advanced despite an unparseable reply")
+	}
+}
+
 // NONE — валидный ответ, а не сбой: курсор обязан двинуться, иначе пачка
 // застрянет навсегда.
 func TestRunnerAdvancesCursorOnNone(t *testing.T) {
