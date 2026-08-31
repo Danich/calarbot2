@@ -3,6 +3,7 @@ package lore
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -36,5 +37,16 @@ func (n *HTTPNotifier) Notify(text string) {
 		log.Printf("notify: %v", err)
 		return
 	}
-	resp.Body.Close()
+	// Дочитать тело перед закрытием — иначе транспорт не переиспользует
+	// соединение и на каждое уведомление открывается новое.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+	if resp.StatusCode >= 300 {
+		// Единственный способ заметить дохлый notify: без этого лога
+		// битый URL или токен молчаливо съедает единственный канал контроля
+		// за тем, что бесплатная модель пишет в вечное хранилище.
+		log.Printf("notify: %s responded %d", n.url, resp.StatusCode)
+	}
 }
