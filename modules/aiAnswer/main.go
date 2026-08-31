@@ -131,7 +131,7 @@ func NewModule(order int, config AIConfig) *Module {
 		if config.LoreModel != "" {
 			loreLLM = models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.LoreModel), "")
 		}
-		loreRunner = lore.NewRunner(s, lore.NewExtractor(loreLLM), config.ContextSize)
+		loreRunner = lore.NewRunner(s, lore.NewExtractor(loreLLM), lore.NewCompactor(loreLLM), config.ContextSize)
 	}
 
 	return &Module{

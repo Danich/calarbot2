@@ -14,11 +14,14 @@ type Storage interface {
 	RipeMessages(chatID, personaID int64, windowSize, limit int) (store.RipeBatch, error)
 	RecentLore(chatID, personaID int64, limit int) ([]store.LoreRecord, error)
 	AppendLore(chatID, personaID int64, events []string, cursor int64) error
+	CompactCandidates(chatID, personaID int64, level, threshold, batch int) ([]store.LoreRecord, error)
+	ApplyCompaction(chatID, personaID int64, level int, ids []int64, summary string) error
 }
 
 type Runner struct {
 	store  Storage
 	ex     *Extractor
+	cp     *Compactor
 	window int
 
 	// running держит по одному извлечению на (чат, персона): без него частые
@@ -26,8 +29,8 @@ type Runner struct {
 	running sync.Map
 }
 
-func NewRunner(s Storage, ex *Extractor, window int) *Runner {
-	return &Runner{store: s, ex: ex, window: window}
+func NewRunner(s Storage, ex *Extractor, cp *Compactor, window int) *Runner {
+	return &Runner{store: s, ex: ex, cp: cp, window: window}
 }
 
 // Maybe запускает извлечение в фоне и сразу возвращается: ответ в чате не ждёт
@@ -65,6 +68,11 @@ func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string)
 		return err
 	}
 	if len(batch.Messages) < BatchMin {
+		// Новых сообщений мало, но лор мог перевалить порог и раньше: усушка
+		// не должна ждать, пока чат снова оживёт и подкинет свежую пачку.
+		if err := r.compact(ctx, chatID, personaID, canon); err != nil {
+			log.Printf("lore compaction: %v", err)
+		}
 		return nil
 	}
 	recent, err := r.store.RecentLore(chatID, personaID, RecentForPrompt)
@@ -81,6 +89,39 @@ func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string)
 	}
 	for _, e := range events {
 		log.Printf("lore: chat=%d persona=%d + %q", chatID, personaID, e)
+	}
+	// Усушка идёт снизу вверх: схлопнутые события могут переполнить уровень
+	// сводок, и тогда сводки схлопнутся в главу тем же оператором.
+	if err := r.compact(ctx, chatID, personaID, canon); err != nil {
+		log.Printf("lore compaction: %v", err)
+	}
+	return nil
+}
+
+const maxCompactLevels = 5
+
+func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon string) error {
+	for level := 0; level < maxCompactLevels; level++ {
+		cands, err := r.store.CompactCandidates(chatID, personaID, level, CompactThreshold, CompactBatch)
+		if err != nil {
+			return err
+		}
+		if len(cands) == 0 {
+			return nil
+		}
+		summary, err := r.cp.Compact(ctx, canon, cands)
+		if err != nil {
+			return err
+		}
+		ids := make([]int64, 0, len(cands))
+		for _, c := range cands {
+			ids = append(ids, c.ID)
+		}
+		if err := r.store.ApplyCompaction(chatID, personaID, level, ids, summary); err != nil {
+			return err
+		}
+		log.Printf("lore: chat=%d persona=%d compacted %d records of level %d into %q",
+			chatID, personaID, len(ids), level, summary)
 	}
 	return nil
 }

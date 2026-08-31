@@ -119,3 +119,63 @@ func TestLoreForPromptLimitsEvents(t *testing.T) {
 		t.Errorf("last record = %q, want the newest event", got[len(got)-1].Text)
 	}
 }
+
+func TestCompactCandidatesWaitForThreshold(t *testing.T) {
+	s := saveN(t, 100, 5)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	for i := 0; i < 39; i++ {
+		s.AppendLore(100, 7, []string{fmt.Sprintf("e%d", i)}, int64(i+1))
+	}
+	got, err := s.CompactCandidates(100, 7, 0, 40, 20)
+	if err != nil {
+		t.Fatalf("CompactCandidates: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d candidates below the threshold, want 0", len(got))
+	}
+}
+
+func TestCompactCandidatesTakeTheOldest(t *testing.T) {
+	s := saveN(t, 100, 5)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	for i := 0; i < 41; i++ {
+		s.AppendLore(100, 7, []string{fmt.Sprintf("e%d", i)}, int64(i+1))
+	}
+	got, _ := s.CompactCandidates(100, 7, 0, 40, 20)
+	if len(got) != 20 {
+		t.Fatalf("got %d candidates, want 20", len(got))
+	}
+	if got[0].Text != "e0" {
+		t.Errorf("first candidate = %q, want the oldest event", got[0].Text)
+	}
+}
+
+// Схлопнутое не удаляется, но и в промпт больше не идёт.
+func TestApplyCompactionCoversOriginals(t *testing.T) {
+	s := saveN(t, 100, 5)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	for i := 0; i < 41; i++ {
+		s.AppendLore(100, 7, []string{fmt.Sprintf("e%d", i)}, int64(i+1))
+	}
+	cands, _ := s.CompactCandidates(100, 7, 0, 40, 20)
+	ids := make([]int64, 0, len(cands))
+	for _, c := range cands {
+		ids = append(ids, c.ID)
+	}
+	if err := s.ApplyCompaction(100, 7, 0, ids, "первые недели прошли в коридорах"); err != nil {
+		t.Fatalf("ApplyCompaction: %v", err)
+	}
+
+	got, _ := s.LoreForPrompt(100, 7, 100)
+	if len(got) != 22 {
+		t.Fatalf("prompt records = %d, want 21 events + 1 summary", len(got))
+	}
+	if got[0].Level != 1 || got[0].Text != "первые недели прошли в коридорах" {
+		t.Errorf("first record = %+v, want the summary", got[0])
+	}
+	for _, r := range got {
+		if r.Text == "e0" {
+			t.Error("covered event still reaches the prompt")
+		}
+	}
+}

@@ -148,6 +148,59 @@ func (s *Store) LoreForPrompt(chatID, personaID int64, eventLimit int) ([]LoreRe
 	return append(summaries, events...), nil
 }
 
+// CompactCandidates отдаёт самые старые записи уровня level, если их накопилось
+// больше порога. Пусто — значит, усыхать пока нечего.
+func (s *Store) CompactCandidates(chatID, personaID int64, level, threshold, batch int) ([]LoreRecord, error) {
+	var count int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM lore
+		WHERE chat_id = ? AND persona_id = ? AND level = ? AND covered_by IS NULL`,
+		chatID, personaID, level,
+	).Scan(&count); err != nil {
+		return nil, fmt.Errorf("count lore: %w", err)
+	}
+	if count <= threshold {
+		return nil, nil
+	}
+	return s.queryLore(`
+		SELECT id, level, text, ts FROM lore
+		WHERE chat_id = ? AND persona_id = ? AND level = ? AND covered_by IS NULL
+		ORDER BY id ASC LIMIT ?`, chatID, personaID, level, batch)
+}
+
+// ApplyCompaction кладёт сводку уровнем выше и помечает схлопнутые записи.
+//
+// Одной транзакцией: сводка без пометок задвоила бы историю, пометки без сводки
+// стёрли бы её.
+func (s *Store) ApplyCompaction(chatID, personaID int64, level int, ids []int64, summary string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
+		`INSERT INTO lore (chat_id, persona_id, level, text, ts) VALUES (?, ?, ?, ?, ?)`,
+		chatID, personaID, level+1, summary, time.Now().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert summary: %w", err)
+	}
+	summaryID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("summary id: %w", err)
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`UPDATE lore SET covered_by = ? WHERE id = ?`, summaryID, id); err != nil {
+			return fmt.Errorf("cover lore %d: %w", id, err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) queryLore(query string, args ...any) ([]LoreRecord, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {

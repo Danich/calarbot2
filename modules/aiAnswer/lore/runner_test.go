@@ -62,7 +62,7 @@ func TestRunnerWaitsForBatchMin(t *testing.T) {
 	llm := &stubLLM{reply: "- что-то было"}
 	s.EnsureLoreCursorAt(100, 7, 0)
 
-	if err := lore.NewRunner(s, lore.NewExtractor(llm), 10).Run(context.Background(), 100, 7, "canon"); err != nil {
+	if err := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10).Run(context.Background(), 100, 7, "canon"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if llm.user != "" {
@@ -75,7 +75,7 @@ func TestRunnerWritesEventsAndAdvancesCursor(t *testing.T) {
 	s.EnsureLoreCursorAt(100, 7, 0)
 	llm := &stubLLM{reply: "- нашёл оливье"}
 
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestRunnerKeepsCursorOnModelError(t *testing.T) {
 	s.EnsureLoreCursorAt(100, 7, 0)
 	llm := &stubLLM{err: errors.New("model down")}
 
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 	if err := r.Run(context.Background(), 100, 7, "canon"); err == nil {
 		t.Fatal("want an error")
 	}
@@ -113,7 +113,7 @@ func TestRunnerAdvancesCursorOnNone(t *testing.T) {
 	s.EnsureLoreCursorAt(100, 7, 0)
 	llm := &stubLLM{reply: "NONE"}
 
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestRunnerNeverExceedsBatchMax(t *testing.T) {
 	s.EnsureLoreCursorAt(100, 7, 0)
 	llm := &stubLLM{reply: "NONE"}
 
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestMaybeRecoversFromPanicAndReleasesGuard(t *testing.T) {
 	raw.EnsureLoreCursorAt(100, 7, 0)
 	s := &signalingStore{Store: raw, appended: make(chan error, 4)}
 	llm := &panicOnceLLM{started: make(chan struct{}, 4)}
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 
 	logBuf := &syncBuffer{}
 	orig := log.Writer()
@@ -256,7 +256,7 @@ func TestMaybeCollapsesOverlappingCalls(t *testing.T) {
 	raw.EnsureLoreCursorAt(100, 7, 0)
 	s := &signalingStore{Store: raw, appended: make(chan error, 4)}
 	llm := &blockingLLM{release: make(chan struct{})}
-	r := lore.NewRunner(s, lore.NewExtractor(llm), 10)
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
 
 	// LoadOrStore в Maybe отрабатывает синхронно до запуска горутины, так что
 	// guard уже занят к моменту, когда первый Maybe возвращает управление —
@@ -314,5 +314,27 @@ func TestMaybeCollapsesOverlappingCalls(t *testing.T) {
 
 	if n := atomic.LoadInt32(&llm.calls); n != 2 {
 		t.Fatalf("model called %d times overall, want exactly 2 (one per successful Run)", n)
+	}
+}
+
+func TestRunnerCompactsWhenEventsPileUp(t *testing.T) {
+	s := runnerStore(t, 100, 40)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	for i := 0; i < 41; i++ {
+		s.AppendLore(100, 7, []string{fmt.Sprintf("e%d", i)}, int64(i+1))
+	}
+	llm := &stubLLM{reply: "сводка недели"}
+
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
+	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, _ := s.LoreForPrompt(100, 7, 100)
+	if got[0].Level != 1 {
+		t.Errorf("first record = %+v, want a level-1 summary", got[0])
+	}
+	if len(got) > 41 {
+		t.Errorf("prompt records = %d, compaction did not shrink anything", len(got))
 	}
 }
