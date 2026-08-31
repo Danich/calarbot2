@@ -9,6 +9,17 @@ import (
 	"calarbot2/modules/aiAnswer/store"
 )
 
+// Пины значений: уровень 0 остаётся крупным и редким, уровни выше усыхают
+// вчетверо агрессивнее — так лор в промпте не разбухает вместе с базой.
+func TestCompactionConstants(t *testing.T) {
+	if lore.CompactThreshold != 40 || lore.CompactBatch != 20 {
+		t.Errorf("level-0 thresholds changed: %d/%d, want 40/20", lore.CompactThreshold, lore.CompactBatch)
+	}
+	if lore.CompactThresholdHigh != 10 || lore.CompactBatchHigh != 5 {
+		t.Errorf("level>=1 thresholds changed: %d/%d, want 10/5", lore.CompactThresholdHigh, lore.CompactBatchHigh)
+	}
+}
+
 func TestCompactReturnsASingleLine(t *testing.T) {
 	llm := &stubLLM{reply: "за первую неделю облазил три этажа и подружился с @vasya"}
 	got, err := lore.NewCompactor(llm).Compact(context.Background(), "canon", []store.LoreRecord{

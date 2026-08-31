@@ -122,7 +122,13 @@ const maxCompactLevels = 5
 // заметили.
 func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon string) error {
 	for level := 0; level < maxCompactLevels; level++ {
-		cands, err := r.store.CompactCandidates(chatID, personaID, level, CompactThreshold, CompactBatch)
+		threshold, batch := CompactThreshold, CompactBatch
+		if level > 0 {
+			// Уровень 0 (события) — дешёвый и частый, остальные усыхают
+			// вчетверо агрессивнее: см. комментарий у CompactThresholdHigh.
+			threshold, batch = CompactThresholdHigh, CompactBatchHigh
+		}
+		cands, err := r.store.CompactCandidates(chatID, personaID, level, threshold, batch)
 		if err != nil {
 			return err
 		}

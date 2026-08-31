@@ -429,3 +429,27 @@ func TestRunnerCompactsHigherLevelEvenWhenLowerLevelIsFine(t *testing.T) {
 		t.Fatalf("first record = %+v, want a level-2 chapter compacted from the level-1 backlog", got[0])
 	}
 }
+
+// Уровни выше нуля усыхают агрессивнее событий (CompactThresholdHigh/Batch —
+// 10/5, а не 40/20): 11 записей уровня 1 уже должны схлопнуться, хотя это
+// далеко меньше порога уровня 0.
+func TestRunnerCompactsLevelOneAtTheSmallerThreshold(t *testing.T) {
+	s := runnerStore(t, 100, 5) // мало сообщений — ничего не созреет для Extract
+	s.EnsureLoreCursorAt(100, 7, 0)
+	for i := 0; i < lore.CompactThresholdHigh+1; i++ {
+		if err := s.ApplyCompaction(100, 7, 0, []int64{int64(1000 + i)}, fmt.Sprintf("summary%d", i)); err != nil {
+			t.Fatalf("seed level 1: %v", err)
+		}
+	}
+
+	llm := &stubLLM{reply: "глава недели"}
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10)
+	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, _ := s.LoreForPrompt(100, 7, 100)
+	if len(got) == 0 || got[0].Level != 2 {
+		t.Fatalf("first record = %+v, want a level-2 chapter compacted well below the level-0 threshold of 40", got[0])
+	}
+}

@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// maxSummariesInPrompt — защитный потолок, а не расчёт бюджета: сама усушка
+// (см. lore.CompactThresholdHigh/CompactBatchHigh) держит каждый уровень
+// сводок в пределах ~11 живых записей, так что на практике этот LIMIT никогда
+// не срабатывает. Он здесь на случай, если усушка где-то застрянет — тогда
+// промпт получает потолок, а не растёт неограниченно вместе с базой.
+const maxSummariesInPrompt = 1000
+
 type LoreRecord struct {
 	ID    int64
 	Level int
@@ -133,7 +140,7 @@ func (s *Store) LoreForPrompt(chatID, personaID int64, eventLimit int) ([]LoreRe
 	summaries, err := s.queryLore(`
 		SELECT id, level, text, ts FROM lore
 		WHERE chat_id = ? AND persona_id = ? AND level > 0 AND covered_by IS NULL
-		ORDER BY level DESC, id ASC LIMIT ?`, chatID, personaID, 1000)
+		ORDER BY level DESC, id ASC LIMIT ?`, chatID, personaID, maxSummariesInPrompt)
 	if err != nil {
 		return nil, err
 	}
