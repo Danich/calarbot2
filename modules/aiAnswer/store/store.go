@@ -164,9 +164,3 @@ func (s *Store) SetMeta(key, value string) error {
 func (s *Store) Close() error {
 	return s.db.Close()
 }
-
-// SetPersonaSourceForTesting sets the source of a persona for testing purposes.
-func (s *Store) SetPersonaSourceForTesting(id int64, source string) error {
-	_, err := s.db.Exec(`UPDATE personas SET source = ? WHERE id = ?`, source, id)
-	return err
-}
