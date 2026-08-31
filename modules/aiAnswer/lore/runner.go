@@ -60,6 +60,17 @@ func (r *Runner) Maybe(chatID, personaID int64, canon string) {
 
 // Run переваривает одну пачку. Возвращает nil, когда переваривать нечего.
 func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string) error {
+	// Усушка — свойство уже сохранённого лора, а не этого конкретного захода:
+	// она обязана случиться на любом выходе из Run, иначе застрявшая на
+	// ошибках модель (или просто пустая пачка) держит лор разбухшим сколько
+	// угодно долго. Один defer вместо разбросанных по функции вызовов — так
+	// новый exit-путь не может тихо забыть про усушку.
+	defer func() {
+		if err := r.compact(ctx, chatID, personaID, canon); err != nil {
+			log.Printf("lore compaction: %v", err)
+		}
+	}()
+
 	if err := r.store.EnsureLoreCursor(chatID, personaID); err != nil {
 		return err
 	}
@@ -68,11 +79,6 @@ func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string)
 		return err
 	}
 	if len(batch.Messages) < BatchMin {
-		// Новых сообщений мало, но лор мог перевалить порог и раньше: усушка
-		// не должна ждать, пока чат снова оживёт и подкинет свежую пачку.
-		if err := r.compact(ctx, chatID, personaID, canon); err != nil {
-			log.Printf("lore compaction: %v", err)
-		}
 		return nil
 	}
 	recent, err := r.store.RecentLore(chatID, personaID, RecentForPrompt)
@@ -90,16 +96,15 @@ func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string)
 	for _, e := range events {
 		log.Printf("lore: chat=%d persona=%d + %q", chatID, personaID, e)
 	}
-	// Усушка идёт снизу вверх: схлопнутые события могут переполнить уровень
-	// сводок, и тогда сводки схлопнутся в главу тем же оператором.
-	if err := r.compact(ctx, chatID, personaID, canon); err != nil {
-		log.Printf("lore compaction: %v", err)
-	}
 	return nil
 }
 
 const maxCompactLevels = 5
 
+// compact идёт по всем уровням снизу вверх и не останавливается на первом
+// пустом: правило одно и работает на любом уровне независимо от остальных,
+// так что уровень выше не должен ждать переполнения уровня ниже, чтобы его
+// заметили.
 func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon string) error {
 	for level := 0; level < maxCompactLevels; level++ {
 		cands, err := r.store.CompactCandidates(chatID, personaID, level, CompactThreshold, CompactBatch)
@@ -107,7 +112,7 @@ func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon str
 			return err
 		}
 		if len(cands) == 0 {
-			return nil
+			continue
 		}
 		summary, err := r.cp.Compact(ctx, canon, cands)
 		if err != nil {
