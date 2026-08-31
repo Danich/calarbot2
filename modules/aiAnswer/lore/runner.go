@@ -19,10 +19,11 @@ type Storage interface {
 }
 
 type Runner struct {
-	store  Storage
-	ex     *Extractor
-	cp     *Compactor
-	window int
+	store    Storage
+	ex       *Extractor
+	cp       *Compactor
+	window   int
+	notifier Notifier
 
 	// running держит по одному извлечению на (чат, персона): без него частые
 	// сообщения запускают несколько заходов на одну и ту же пачку.
@@ -31,6 +32,19 @@ type Runner struct {
 
 func NewRunner(s Storage, ex *Extractor, cp *Compactor, window int) *Runner {
 	return &Runner{store: s, ex: ex, cp: cp, window: window}
+}
+
+// WithNotifier включает уведомления. nil-notifier — нормальное состояние:
+// уведомления живут за флагом конфига.
+func (r *Runner) WithNotifier(n Notifier) *Runner {
+	r.notifier = n
+	return r
+}
+
+func (r *Runner) notify(text string) {
+	if r.notifier != nil {
+		r.notifier.Notify(text)
+	}
 }
 
 // Maybe запускает извлечение в фоне и сразу возвращается: ответ в чате не ждёт
@@ -95,6 +109,7 @@ func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string)
 	}
 	for _, e := range events {
 		log.Printf("lore: chat=%d persona=%d + %q", chatID, personaID, e)
+		r.notify(e)
 	}
 	return nil
 }
@@ -127,6 +142,7 @@ func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon str
 		}
 		log.Printf("lore: chat=%d persona=%d compacted %d records of level %d into %q",
 			chatID, personaID, len(ids), level, summary)
+		r.notify(summary)
 	}
 	return nil
 }

@@ -35,6 +35,8 @@ type AIConfig struct {
 	DefaultPersona string `yaml:"default_persona"`
 	LoreWindow     int    `yaml:"lore_window"`
 	LoreModel      string `yaml:"lore_model"`
+	LoreNotify     bool   `yaml:"lore_notify"`
+	NotifyURL      string `yaml:"notify_url"`
 
 	OpenRouterKey     string `yaml:"openrouter_key"`
 	NebiusKey         string `yaml:"nebius_key"`
@@ -97,7 +99,11 @@ func NewModule(order int, config AIConfig) *Module {
 		); err != nil {
 			log.Printf("persona seed: %v", err)
 		} else if change != store.PersonaUnchanged {
-			log.Printf("persona %q: %s", config.DefaultPersona, personaChangeText(change))
+			text := fmt.Sprintf("persona %q: %s", config.DefaultPersona, personaChangeText(change))
+			log.Print(text)
+			if config.LoreNotify && config.NotifyURL != "" {
+				lore.NewHTTPNotifier(config.NotifyURL).Notify(text)
+			}
 		}
 	}
 
@@ -132,6 +138,9 @@ func NewModule(order int, config AIConfig) *Module {
 			loreLLM = models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.LoreModel), "")
 		}
 		loreRunner = lore.NewRunner(s, lore.NewExtractor(loreLLM), lore.NewCompactor(loreLLM), config.ContextSize)
+		if config.LoreNotify && config.NotifyURL != "" {
+			loreRunner = loreRunner.WithNotifier(lore.NewHTTPNotifier(config.NotifyURL))
+		}
 	}
 
 	return &Module{

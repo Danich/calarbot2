@@ -317,6 +317,25 @@ func TestMaybeCollapsesOverlappingCalls(t *testing.T) {
 	}
 }
 
+type recordingNotifier struct{ got []string }
+
+func (n *recordingNotifier) Notify(text string) { n.got = append(n.got, text) }
+
+func TestRunnerNotifiesAboutNewEvents(t *testing.T) {
+	s := runnerStore(t, 100, 40)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	llm := &stubLLM{reply: "- нашёл оливье"}
+	n := &recordingNotifier{}
+
+	r := lore.NewRunner(s, lore.NewExtractor(llm), lore.NewCompactor(llm), 10).WithNotifier(n)
+	if err := r.Run(context.Background(), 100, 7, "canon"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(n.got) != 1 || n.got[0] != "нашёл оливье" {
+		t.Errorf("notifications = %#v", n.got)
+	}
+}
+
 func TestRunnerCompactsWhenEventsPileUp(t *testing.T) {
 	s := runnerStore(t, 100, 40)
 	s.EnsureLoreCursorAt(100, 7, 0)
