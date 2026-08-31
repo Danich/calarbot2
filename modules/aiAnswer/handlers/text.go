@@ -15,12 +15,11 @@ type LLMClient interface {
 }
 
 type TextHandler struct {
-	client       LLMClient
-	systemPrompt string
+	client LLMClient
 }
 
-func NewTextHandler(client LLMClient, systemPrompt string) *TextHandler {
-	return &TextHandler{client: client, systemPrompt: systemPrompt}
+func NewTextHandler(client LLMClient) *TextHandler {
+	return &TextHandler{client: client}
 }
 
 func buildContextPrompt(chatTitle string, history []store.ContextMessage, msg *tgbotapi.Message) string {
@@ -65,15 +64,17 @@ func chatTitle(msg *tgbotapi.Message) string {
 	return "Unknown"
 }
 
-func (h *TextHandler) Chat(ctx context.Context, msg *tgbotapi.Message, history []store.ContextMessage) (string, error) {
-	return h.client.Complete(ctx, h.systemPrompt, buildContextPrompt(chatTitle(msg), history, msg))
+// Chat, Answer и Translate получают системный промпт аргументом: он больше не
+// константа модуля, а зависит от чата — персона и её лор у каждого свои.
+func (h *TextHandler) Chat(ctx context.Context, system string, msg *tgbotapi.Message, history []store.ContextMessage) (string, error) {
+	return h.client.Complete(ctx, system, buildContextPrompt(chatTitle(msg), history, msg))
 }
 
-func (h *TextHandler) Answer(ctx context.Context, msg *tgbotapi.Message, history []store.ContextMessage) (string, error) {
-	return h.client.Complete(ctx, h.systemPrompt, buildContextPrompt(chatTitle(msg), history, msg))
+func (h *TextHandler) Answer(ctx context.Context, system string, msg *tgbotapi.Message, history []store.ContextMessage) (string, error) {
+	return h.client.Complete(ctx, system, buildContextPrompt(chatTitle(msg), history, msg))
 }
 
-func (h *TextHandler) Translate(ctx context.Context, msg *tgbotapi.Message, _ []store.ContextMessage) (string, error) {
+func (h *TextHandler) Translate(ctx context.Context, _ string, msg *tgbotapi.Message, _ []store.ContextMessage) (string, error) {
 	return h.client.Complete(ctx,
 		"You are a translator. Detect the source language and translate to Russian if not Russian, or to English otherwise. Reply with only the translated text.",
 		msg.Text,

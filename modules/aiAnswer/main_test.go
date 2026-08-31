@@ -1,11 +1,14 @@
 package main
 
 import (
+	"database/sql"
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/common"
+	"calarbot2/modules/aiAnswer/store"
 )
 
 func TestModuleOrder(t *testing.T) {
@@ -97,6 +100,104 @@ func TestModuleIsCalledDirectMentionAlwaysTrue(t *testing.T) {
 	}
 	if !m.IsCalled(msg) {
 		t.Error("IsCalled with @mention should always return true (direct address)")
+	}
+}
+
+func TestSystemPromptCarriesPersonaAndLore(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	s, err := store.New(path)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	p, _, _ := s.UpsertConfigPersona("mamkin", "mamkin", "ты Мамкин")
+	s.EnsureLoreCursorAt(100, p.ID, 0)
+	s.AppendLore(100, p.ID, []string{"нашёл оливье"}, 1)
+	s.Close()
+
+	m := NewModule(1, AIConfig{
+		SystemPrompt:   "ты Мамкин",
+		DefaultPersona: "mamkin",
+		LoreWindow:     20,
+		SQLitePath:     path,
+	})
+	defer m.cancelRefresh()
+
+	_, system := m.systemPromptFor(100)
+	if !strings.Contains(system, "ты Мамкин") {
+		t.Error("canon missing from the system prompt")
+	}
+	if !strings.Contains(system, "нашёл оливье") {
+		t.Error("lore missing from the system prompt")
+	}
+}
+
+func TestSystemPromptFallsBackWithoutStore(t *testing.T) {
+	m := NewModule(1, AIConfig{SystemPrompt: "ты Мамкин"})
+	defer m.cancelRefresh()
+
+	if _, system := m.systemPromptFor(100); system != "ты Мамкин" {
+		t.Errorf("system = %q, want the config prompt verbatim", system)
+	}
+}
+
+// Закрытый стор ломает самый первый запрос systemPromptFor — ResolvePersona.
+// Промпт должен откатиться на конфиг целиком, без обрезка канона.
+func TestSystemPromptFallsBackWhenResolvePersonaFails(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	m := NewModule(1, AIConfig{
+		SystemPrompt:   "ты Мамкин",
+		DefaultPersona: "mamkin",
+		LoreWindow:     20,
+		SQLitePath:     path,
+	})
+	defer m.cancelRefresh()
+
+	if err := m.store.Close(); err != nil {
+		t.Fatalf("store.Close: %v", err)
+	}
+
+	p, system := m.systemPromptFor(100)
+	if system != "ты Мамкин" {
+		t.Errorf("system = %q, want the config prompt verbatim on ResolvePersona failure", system)
+	}
+	if p != (store.Persona{}) {
+		t.Errorf("persona = %+v, want the zero value on ResolvePersona failure", p)
+	}
+}
+
+// Персона резолвится успешно, а запрос лора — нет: канон персоны должен
+// остаться, теряется только блок воспоминаний. Это отличает этот откат от
+// провала ResolvePersona, где теряется всё, включая персону.
+func TestSystemPromptKeepsCanonWhenLoreQueryFails(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	m := NewModule(1, AIConfig{
+		SystemPrompt:   "ты Мамкин",
+		DefaultPersona: "mamkin",
+		LoreWindow:     20,
+		SQLitePath:     path,
+	})
+	defer m.cancelRefresh()
+
+	// NewModule уже засеяла персону "mamkin" в m.store. Ломаем только таблицу
+	// lore отдельным соединением к тому же файлу, оставляя personas рабочей —
+	// иначе не отличить этот откат от провала ResolvePersona.
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := raw.Exec("DROP TABLE lore"); err != nil {
+		t.Fatalf("drop lore table: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("raw.Close: %v", err)
+	}
+
+	p, system := m.systemPromptFor(100)
+	if p.Key != "mamkin" {
+		t.Fatalf("persona = %+v, want the resolved persona kept despite lore failure", p)
+	}
+	if system != "ты Мамкин" {
+		t.Errorf("system = %q, want the persona canon verbatim (no lore block) when lore lookup fails", system)
 	}
 }
 

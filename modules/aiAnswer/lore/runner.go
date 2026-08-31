@@ -1,0 +1,154 @@
+package lore
+
+import (
+	"context"
+	"log"
+	"sync"
+
+	"calarbot2/modules/aiAnswer/store"
+)
+
+// Storage — та часть стора, которой пользуется рост лора.
+type Storage interface {
+	EnsureLoreCursor(chatID, personaID int64) error
+	RipeMessages(chatID, personaID int64, windowSize, limit int) (store.RipeBatch, error)
+	RecentLore(chatID, personaID int64, limit int) ([]store.LoreRecord, error)
+	AppendLore(chatID, personaID int64, events []string, cursor int64) error
+	CompactCandidates(chatID, personaID int64, level, threshold, batch int) ([]store.LoreRecord, error)
+	ApplyCompaction(chatID, personaID int64, level int, ids []int64, summary string) error
+}
+
+type Runner struct {
+	store    Storage
+	ex       *Extractor
+	cp       *Compactor
+	window   int
+	notifier Notifier
+
+	// running держит по одному извлечению на (чат, персона): без него частые
+	// сообщения запускают несколько заходов на одну и ту же пачку.
+	running sync.Map
+}
+
+func NewRunner(s Storage, ex *Extractor, cp *Compactor, window int) *Runner {
+	return &Runner{store: s, ex: ex, cp: cp, window: window}
+}
+
+// WithNotifier включает уведомления. nil-notifier — нормальное состояние:
+// уведомления живут за флагом конфига.
+func (r *Runner) WithNotifier(n Notifier) *Runner {
+	r.notifier = n
+	return r
+}
+
+func (r *Runner) notify(text string) {
+	if r.notifier != nil {
+		r.notifier.Notify(text)
+	}
+}
+
+// Maybe запускает извлечение в фоне и сразу возвращается: ответ в чате не ждёт
+// памяти.
+func (r *Runner) Maybe(chatID, personaID int64, canon string) {
+	key := [2]int64{chatID, personaID}
+	if _, busy := r.running.LoadOrStore(key, true); busy {
+		return
+	}
+	go func() {
+		// Порядок defer важен: Delete должен освободить ключ и тогда, когда
+		// Run паникует — иначе чат навсегда выпадает из роста лора.
+		defer r.running.Delete(key)
+		defer func() {
+			if p := recover(); p != nil {
+				// Это единственная неприсмотренная фоновая горутина на горячем
+				// пути сообщений: паника здесь не должна ронять процесс и
+				// обрывать ответы во всех остальных чатах.
+				log.Printf("lore: panic: chat=%d persona=%d: %v", chatID, personaID, p)
+			}
+		}()
+		if err := r.Run(context.Background(), chatID, personaID, canon); err != nil {
+			log.Printf("lore: chat=%d persona=%d: %v", chatID, personaID, err)
+		}
+	}()
+}
+
+// Run переваривает одну пачку. Возвращает nil, когда переваривать нечего.
+func (r *Runner) Run(ctx context.Context, chatID, personaID int64, canon string) error {
+	// Усушка — свойство уже сохранённого лора, а не этого конкретного захода:
+	// она обязана случиться на любом выходе из Run, иначе застрявшая на
+	// ошибках модель (или просто пустая пачка) держит лор разбухшим сколько
+	// угодно долго. Один defer вместо разбросанных по функции вызовов — так
+	// новый exit-путь не может тихо забыть про усушку.
+	defer func() {
+		if err := r.compact(ctx, chatID, personaID, canon); err != nil {
+			log.Printf("lore compaction: %v", err)
+		}
+	}()
+
+	if err := r.store.EnsureLoreCursor(chatID, personaID); err != nil {
+		return err
+	}
+	batch, err := r.store.RipeMessages(chatID, personaID, r.window, BatchMax)
+	if err != nil {
+		return err
+	}
+	if len(batch.Messages) < BatchMin {
+		return nil
+	}
+	recent, err := r.store.RecentLore(chatID, personaID, RecentForPrompt)
+	if err != nil {
+		return err
+	}
+	events, err := r.ex.Extract(ctx, canon, batch.Messages, recent)
+	if err != nil {
+		// Курсор не двигаем: пачка доедет следующим разом.
+		return err
+	}
+	if err := r.store.AppendLore(chatID, personaID, events, batch.LastID); err != nil {
+		return err
+	}
+	for _, e := range events {
+		log.Printf("lore: chat=%d persona=%d + %q", chatID, personaID, e)
+		r.notify(e)
+	}
+	return nil
+}
+
+const maxCompactLevels = 5
+
+// compact идёт по всем уровням снизу вверх и не останавливается на первом
+// пустом: правило одно и работает на любом уровне независимо от остальных,
+// так что уровень выше не должен ждать переполнения уровня ниже, чтобы его
+// заметили.
+func (r *Runner) compact(ctx context.Context, chatID, personaID int64, canon string) error {
+	for level := 0; level < maxCompactLevels; level++ {
+		threshold, batch := CompactThreshold, CompactBatch
+		if level > 0 {
+			// Уровень 0 (события) — дешёвый и частый, остальные усыхают
+			// вчетверо агрессивнее: см. комментарий у CompactThresholdHigh.
+			threshold, batch = CompactThresholdHigh, CompactBatchHigh
+		}
+		cands, err := r.store.CompactCandidates(chatID, personaID, level, threshold, batch)
+		if err != nil {
+			return err
+		}
+		if len(cands) == 0 {
+			continue
+		}
+		summary, err := r.cp.Compact(ctx, canon, cands)
+		if err != nil {
+			return err
+		}
+		ids := make([]int64, 0, len(cands))
+		for _, c := range cands {
+			ids = append(ids, c.ID)
+		}
+		if err := r.store.ApplyCompaction(chatID, personaID, level, ids, summary); err != nil {
+			return err
+		}
+		log.Printf("lore: chat=%d persona=%d compacted %d records of level %d into %q",
+			chatID, personaID, len(ids), level, summary)
+		r.notify(summary)
+	}
+	return nil
+}

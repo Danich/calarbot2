@@ -13,6 +13,7 @@ import (
 	"calarbot2/botModules"
 	"calarbot2/common"
 	"calarbot2/modules/aiAnswer/handlers"
+	"calarbot2/modules/aiAnswer/lore"
 	"calarbot2/modules/aiAnswer/models"
 	"calarbot2/modules/aiAnswer/router"
 	"calarbot2/modules/aiAnswer/store"
@@ -30,6 +31,12 @@ type AIConfig struct {
 	CallWeight   int    `yaml:"call_weight"`
 	SystemPrompt string `yaml:"system_prompt"`
 	ContextSize  int    `yaml:"context_size"`
+
+	DefaultPersona string `yaml:"default_persona"`
+	LoreWindow     int    `yaml:"lore_window"`
+	LoreModel      string `yaml:"lore_model"`
+	LoreNotify     bool   `yaml:"lore_notify"`
+	NotifyURL      string `yaml:"notify_url"`
 
 	OpenRouterKey     string `yaml:"openrouter_key"`
 	NebiusKey         string `yaml:"nebius_key"`
@@ -51,6 +58,7 @@ type Module struct {
 	textHandler   *handlers.TextHandler
 	visionHandler *handlers.VisionHandler
 	imageHandler  *handlers.ImageGenHandler
+	loreRunner    *lore.Runner
 	cancelRefresh context.CancelFunc
 }
 
@@ -70,6 +78,12 @@ func NewModule(order int, config AIConfig) *Module {
 	if config.ContextSize == 0 {
 		config.ContextSize = 20
 	}
+	if config.DefaultPersona == "" {
+		config.DefaultPersona = "default"
+	}
+	if config.LoreWindow == 0 {
+		config.LoreWindow = 20
+	}
 
 	var s *store.Store
 	if config.SQLitePath != "" {
@@ -77,6 +91,19 @@ func NewModule(order int, config AIConfig) *Module {
 		s, err = store.New(config.SQLitePath)
 		if err != nil {
 			log.Printf("SQLite unavailable (%v), context will not persist across restarts", err)
+		}
+	}
+	if s != nil {
+		if _, change, err := s.UpsertConfigPersona(
+			config.DefaultPersona, config.DefaultPersona, config.SystemPrompt,
+		); err != nil {
+			log.Printf("persona seed: %v", err)
+		} else if change != store.PersonaUnchanged {
+			text := fmt.Sprintf("persona %q: %s", config.DefaultPersona, personaChangeText(change))
+			log.Print(text)
+			if config.LoreNotify && config.NotifyURL != "" {
+				lore.NewHTTPNotifier(config.NotifyURL).Notify(text)
+			}
 		}
 	}
 
@@ -104,16 +131,62 @@ func NewModule(order int, config AIConfig) *Module {
 		visionPersona = personaOR
 	}
 
+	var loreRunner *lore.Runner
+	if s != nil {
+		loreLLM := orClient
+		if config.LoreModel != "" {
+			loreLLM = models.NewOpenRouterClient(config.OpenRouterKey, models.NewStaticModel(config.LoreModel), "")
+		}
+		loreRunner = lore.NewRunner(s, lore.NewExtractor(loreLLM), lore.NewCompactor(loreLLM), config.ContextSize)
+		if config.LoreNotify && config.NotifyURL != "" {
+			loreRunner = loreRunner.WithNotifier(lore.NewHTTPNotifier(config.NotifyURL))
+		}
+	}
+
 	return &Module{
 		order:         order,
 		config:        config,
 		store:         s,
 		router:        router.New(orClient),
-		textHandler:   handlers.NewTextHandler(textLLM, config.SystemPrompt),
-		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona, config.SystemPrompt),
+		textHandler:   handlers.NewTextHandler(textLLM),
+		visionHandler: handlers.NewVisionHandler(nbClient, visionPersona),
 		imageHandler:  handlers.NewImageGenHandler(imgClient),
+		loreRunner:    loreRunner,
 		cancelRefresh: cancel,
 	}
+}
+
+// personaChangeText: смена личности — это смена ключа. Переписанный промпт при
+// том же ключе почти всегда значит, что ключ поменять забыли, и новому
+// персонажу вот-вот достанется чужая биография.
+func personaChangeText(c store.PersonaChange) string {
+	if c == store.PersonaCreated {
+		return "created"
+	}
+	return "prompt overwritten — is this a new character that kept the old key?"
+}
+
+// systemPromptFor собирает системное сообщение под конкретный чат: канон
+// персоны плюс её лор. Без стора работает как раньше — на промпте из конфига.
+func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
+	if m.store == nil {
+		return store.Persona{}, m.config.SystemPrompt
+	}
+	p, err := m.store.ResolvePersona(chatID, m.config.DefaultPersona)
+	if err != nil {
+		log.Printf("resolve persona: %v", err)
+		return store.Persona{}, m.config.SystemPrompt
+	}
+	records, err := m.store.LoreForPrompt(chatID, p.ID, m.config.LoreWindow)
+	if err != nil {
+		log.Printf("lore for prompt: %v", err)
+		return p, p.SystemPrompt
+	}
+	block := lore.BuildBlock(records)
+	if block == "" {
+		return p, p.SystemPrompt
+	}
+	return p, p.SystemPrompt + "\n\n" + block
 }
 
 func (m *Module) Order() int { return m.order }
@@ -125,6 +198,13 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	if m.store != nil {
 		if err := m.store.SaveMessage(msg); err != nil {
 			log.Printf("store.SaveMessage: %v", err)
+		}
+	}
+	// Лор растёт на каждом сообщении чата, а не только когда бот отвечает:
+	// IsCalled видит весь поток, и никакого расписания для этого не нужно.
+	if m.store != nil && m.loreRunner != nil && msg.Chat != nil {
+		if p, err := m.store.ResolvePersona(msg.Chat.ID, m.config.DefaultPersona); err == nil {
+			m.loreRunner.Maybe(msg.Chat.ID, p.ID, p.SystemPrompt)
 		}
 	}
 	if isDirectAddress(msg, m.config.BotUsername) {
@@ -177,6 +257,7 @@ func (m *Module) answer(payload *botModules.Payload) (botModules.RichAnswer, err
 	}
 
 	photoURL, _ := payload.Extra["photo_url"].(string)
+	_, system := m.systemPromptFor(msg.Chat.ID)
 
 	if isDirectAddress(msg, m.config.BotUsername) {
 		route, err := m.router.Route(ctx, msg)
@@ -184,10 +265,10 @@ func (m *Module) answer(payload *botModules.Payload) (botModules.RichAnswer, err
 			log.Printf("router.Route error: %v", err)
 			route = router.RouteChat
 		}
-		return m.dispatch(ctx, route, msg, history, photoURL)
+		return m.dispatch(ctx, route, system, msg, history, photoURL)
 	}
 
-	text, err := m.textHandler.Chat(ctx, msg, history)
+	text, err := m.textHandler.Chat(ctx, system, msg, history)
 	if err != nil {
 		log.Printf("textHandler.Chat error: %v", err)
 		return botModules.RichAnswer{}, nil
@@ -195,7 +276,7 @@ func (m *Module) answer(payload *botModules.Payload) (botModules.RichAnswer, err
 	return botModules.RichAnswer{Text: text}, nil
 }
 
-func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi.Message, history []store.ContextMessage, photoURL string) (botModules.RichAnswer, error) {
+func (m *Module) dispatch(ctx context.Context, route router.Route, system string, msg *tgbotapi.Message, history []store.ContextMessage, photoURL string) (botModules.RichAnswer, error) {
 	switch route {
 	case router.RouteImageGen:
 		prompt := msg.Text
@@ -210,7 +291,7 @@ func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi
 		return result, nil
 
 	case router.RouteVision:
-		text, err := m.visionHandler.Describe(ctx, msg, photoURL)
+		text, err := m.visionHandler.Describe(ctx, system, msg, photoURL)
 		if err != nil {
 			log.Printf("vision error: %v", err)
 			return botModules.RichAnswer{Text: "Не удалось обработать изображение"}, nil
@@ -218,7 +299,7 @@ func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi
 		return botModules.RichAnswer{Text: text}, nil
 
 	case router.RouteTranslate:
-		text, err := m.textHandler.Translate(ctx, msg, nil)
+		text, err := m.textHandler.Translate(ctx, system, msg, nil)
 		if err != nil {
 			log.Printf("translate error: %v", err)
 			return botModules.RichAnswer{}, nil
@@ -226,7 +307,7 @@ func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi
 		return botModules.RichAnswer{Text: text}, nil
 
 	case router.RouteQuestion:
-		text, err := m.textHandler.Answer(ctx, msg, history)
+		text, err := m.textHandler.Answer(ctx, system, msg, history)
 		if err != nil {
 			log.Printf("answer error: %v", err)
 			return botModules.RichAnswer{}, nil
@@ -234,7 +315,7 @@ func (m *Module) dispatch(ctx context.Context, route router.Route, msg *tgbotapi
 		return botModules.RichAnswer{Text: text}, nil
 
 	default: // RouteChat
-		text, err := m.textHandler.Chat(ctx, msg, history)
+		text, err := m.textHandler.Chat(ctx, system, msg, history)
 		if err != nil {
 			log.Printf("chat error: %v", err)
 			return botModules.RichAnswer{}, nil
