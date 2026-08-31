@@ -53,6 +53,94 @@ func TestRipeMessagesExcludeTheWindow(t *testing.T) {
 	}
 }
 
+// RipeMessages — самый хитрый SQL в ветке (вложенный MIN(id) поверх окна плюс
+// два COALESCE), и это единственное место, где потеря сообщения означала бы
+// навсегда забытый кусок биографии. Прогоняем ~200 сообщений через повторные
+// циклы "созрело — переварили" при нескольких размерах окна и проверяем, что
+// на круг набор переваренных сообщений — это ровно всё, что старше окна, без
+// пропусков и без повторов.
+func TestRipeMessagesNoGapsAcrossRepeatedCycles(t *testing.T) {
+	const total = 200
+	for _, window := range []int{5, 10, 20} {
+		t.Run(fmt.Sprintf("window=%d", window), func(t *testing.T) {
+			s := saveN(t, 100, total)
+			s.EnsureLoreCursorAt(100, 7, 0)
+
+			seen := make(map[string]int)
+			var order []string
+			for {
+				// limit меньше общего числа сообщений: без этого один вызов
+				// переварил бы всё разом и тест не отличил бы "нет пропусков
+				// внутри цикла" от "нет пропусков между циклами".
+				batch, err := s.RipeMessages(100, 7, window, 7)
+				if err != nil {
+					t.Fatalf("RipeMessages: %v", err)
+				}
+				if len(batch.Messages) == 0 {
+					break
+				}
+				for _, m := range batch.Messages {
+					seen[m.Text]++
+					order = append(order, m.Text)
+				}
+				if err := s.AppendLore(100, 7, nil, batch.LastID); err != nil {
+					t.Fatalf("AppendLore: %v", err)
+				}
+			}
+
+			want := total - window
+			if len(order) != want {
+				t.Fatalf("digested %d messages, want %d (total %d minus window %d)", len(order), want, total, window)
+			}
+			for text, n := range seen {
+				if n != 1 {
+					t.Errorf("message %q digested %d times, want exactly once", text, n)
+				}
+			}
+			for i := 0; i < want; i++ {
+				wantText := fmt.Sprintf("m%d", i)
+				if _, ok := seen[wantText]; !ok {
+					t.Errorf("message %q never digested (gap)", wantText)
+				}
+			}
+			for i := want; i < total; i++ {
+				stillWindowed := fmt.Sprintf("m%d", i)
+				if _, ok := seen[stillWindowed]; ok {
+					t.Errorf("message %q inside the window got digested", stillWindowed)
+				}
+			}
+		})
+	}
+}
+
+// Меньше сообщений, чем окно: всё ещё в окне, переваривать нечего — не
+// ошибка и не пропуск, а законный пустой результат.
+func TestRipeMessagesFewerThanWindow(t *testing.T) {
+	s := saveN(t, 100, 3)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	batch, err := s.RipeMessages(100, 7, 10, 50)
+	if err != nil {
+		t.Fatalf("RipeMessages: %v", err)
+	}
+	if len(batch.Messages) != 0 {
+		t.Errorf("got %d ripe messages, want 0 when the chat is smaller than the window", len(batch.Messages))
+	}
+}
+
+// Пустой чат — вырожденный случай того же правила: нет сообщений вообще,
+// значит нечему быть ни в окне, ни созревшим.
+func TestRipeMessagesEmptyChat(t *testing.T) {
+	s := newTestStore(t)
+	s.EnsureLoreCursorAt(100, 7, 0)
+	batch, err := s.RipeMessages(100, 7, 10, 50)
+	if err != nil {
+		t.Fatalf("RipeMessages: %v", err)
+	}
+	if len(batch.Messages) != 0 {
+		t.Errorf("got %d ripe messages, want 0 for an empty chat", len(batch.Messages))
+	}
+}
+
 func TestRipeMessagesRespectLimit(t *testing.T) {
 	s := saveN(t, 100, 100)
 	s.EnsureLoreCursorAt(100, 7, 0)
