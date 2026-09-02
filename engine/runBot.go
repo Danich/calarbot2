@@ -112,6 +112,49 @@ func sortModules(moduleOrders []moduleOrder) []moduleOrder {
 	return moduleOrders
 }
 
+// recordChat запоминает чат, из которого пришёл апдейт. Списка своих чатов
+// телеграм боту не отдаёт, так что панели брать его больше неоткуда.
+func (b *Bot) recordChat(chat *tgbotapi.Chat, ts int64) {
+	if b.SettingsStore == nil || chat == nil {
+		return
+	}
+
+	// У лички нет title: там имя человека и его @username.
+	title := chat.Title
+	if title == "" {
+		title = strings.TrimSpace(chat.FirstName + " " + chat.LastName)
+	}
+
+	if err := b.SettingsStore.UpsertChat(settings.Chat{
+		ID:        chat.ID,
+		Type:      chat.Type,
+		Title:     title,
+		Username:  chat.UserName,
+		FirstSeen: ts,
+		LastSeen:  ts,
+	}); err != nil {
+		log.Printf("settings.UpsertChat: %v", err)
+	}
+}
+
+// recordMembership ловит добавление и изгнание бота. Телеграм шлёт эти апдейты
+// по умолчанию, и без них канал появлялся бы в панели только тогда, когда в нём
+// кто-то напишет.
+func (b *Bot) recordMembership(u *tgbotapi.ChatMemberUpdated) {
+	if b.SettingsStore == nil || u == nil {
+		return
+	}
+
+	b.recordChat(&u.Chat, int64(u.Date))
+
+	switch u.NewChatMember.Status {
+	case "left", "kicked":
+		if err := b.SettingsStore.MarkLeft(u.Chat.ID, int64(u.Date)); err != nil {
+			log.Printf("settings.MarkLeft: %v", err)
+		}
+	}
+}
+
 func (b *Bot) RunBot() {
 	bot := b.BotAPI
 
@@ -121,7 +164,12 @@ func (b *Bot) RunBot() {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
+		if update.MyChatMember != nil {
+			b.recordMembership(update.MyChatMember)
+		}
+
 		if update.Message != nil && !update.Message.From.IsBot { // If we got a message
+			b.recordChat(update.Message.Chat, int64(update.Message.Date))
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 			// Find the module that should handle this message
