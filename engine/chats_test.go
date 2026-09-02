@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -155,5 +156,109 @@ func TestRecordChatNamesNamelessPrivateChatByID(t *testing.T) {
 	}
 	if chats[0].Title == "" {
 		t.Errorf("chat = %+v; want a non-empty title", chats[0])
+	}
+}
+
+// fakeChatInfo — телеграм для бэкфилла названий, без сети.
+type fakeChatInfo struct {
+	chats map[int64]tgbotapi.Chat
+	errs  map[int64]error
+	asked []int64
+}
+
+func (f *fakeChatInfo) GetChat(c tgbotapi.ChatInfoConfig) (tgbotapi.Chat, error) {
+	f.asked = append(f.asked, c.ChatID)
+	if err, ok := f.errs[c.ChatID]; ok {
+		return tgbotapi.Chat{}, err
+	}
+	return f.chats[c.ChatID], nil
+}
+
+func TestBackfillNamesChatsThatHaveNoTitle(t *testing.T) {
+	b := botWithSettings(t)
+	if err := b.SettingsStore.UpsertChat(settings.Chat{ID: -1, Type: "group", Title: "", FirstSeen: 100, LastSeen: 100}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	api := &fakeChatInfo{chats: map[int64]tgbotapi.Chat{
+		-1: {ID: -1, Type: "supergroup", Title: "болталка"},
+	}}
+	b.backfillChatTitles(api)
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	if chats[0].Title != "болталка" || chats[0].Type != "supergroup" {
+		t.Errorf("chat = %+v; want болталка/supergroup", chats[0])
+	}
+	// Бэкфилл — не активность: иначе чат всплывёт наверх списка и соврёт
+	// в колонке «последняя активность».
+	if chats[0].LastSeen != 100 {
+		t.Errorf("LastSeen = %d; want 100", chats[0].LastSeen)
+	}
+}
+
+func TestBackfillSkipsChatsThatAlreadyHaveATitle(t *testing.T) {
+	b := botWithSettings(t)
+	if err := b.SettingsStore.UpsertChat(settings.Chat{ID: -1, Type: "group", Title: "уже есть", FirstSeen: 1, LastSeen: 1}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	api := &fakeChatInfo{}
+	b.backfillChatTitles(api)
+
+	if len(api.asked) != 0 {
+		t.Errorf("спросили телеграм про %v; названия уже есть, спрашивать не о чем", api.asked)
+	}
+}
+
+// Бота могли выгнать из чата — getChat тогда откажет. Это не повод не
+// запускаться и не повод бросить остальные чаты.
+func TestBackfillSurvivesAFailedChat(t *testing.T) {
+	b := botWithSettings(t)
+	for _, id := range []int64{-1, -2} {
+		if err := b.SettingsStore.UpsertChat(settings.Chat{ID: id, Type: "group", FirstSeen: 1, LastSeen: 1}); err != nil {
+			t.Fatalf("UpsertChat: %v", err)
+		}
+	}
+
+	api := &fakeChatInfo{
+		chats: map[int64]tgbotapi.Chat{-2: {ID: -2, Type: "group", Title: "живой"}},
+		errs:  map[int64]error{-1: errors.New("chat not found")},
+	}
+	b.backfillChatTitles(api)
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	byID := map[int64]settings.Chat{}
+	for _, c := range chats {
+		byID[c.ID] = c
+	}
+	if byID[-2].Title != "живой" {
+		t.Errorf("чат -2 = %q; отказ по соседу не должен был его пропустить", byID[-2].Title)
+	}
+	if byID[-1].Title != "" {
+		t.Errorf("чат -1 = %q; при отказе название остаётся пустым", byID[-1].Title)
+	}
+}
+
+// У лички нет title — имя собирается из имени и фамилии.
+func TestBackfillNamesPrivateChats(t *testing.T) {
+	b := botWithSettings(t)
+	if err := b.SettingsStore.UpsertChat(settings.Chat{ID: 42, Type: "private", FirstSeen: 1, LastSeen: 1}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	api := &fakeChatInfo{chats: map[int64]tgbotapi.Chat{
+		42: {ID: 42, Type: "private", FirstName: "Даня", UserName: "danich"},
+	}}
+	b.backfillChatTitles(api)
+
+	chats, _ := b.SettingsStore.ListChats()
+	if chats[0].Title != "Даня" || chats[0].Username != "danich" {
+		t.Errorf("chat = %+v; want Даня/danich", chats[0])
 	}
 }
