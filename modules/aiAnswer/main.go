@@ -172,7 +172,7 @@ func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
 	if m.store == nil {
 		return store.Persona{}, m.config.SystemPrompt
 	}
-	p, err := m.store.ResolvePersona(chatID, m.config.DefaultPersona)
+	p, err := m.store.PersonaByKey(m.config.DefaultPersona)
 	if err != nil {
 		log.Printf("resolve persona: %v", err)
 		return store.Persona{}, m.config.SystemPrompt
@@ -210,7 +210,7 @@ func (m *Module) IsCalled(payload *botModules.Payload) bool {
 	// Лор растёт на каждом сообщении чата, а не только когда бот отвечает:
 	// IsCalled видит весь поток, и никакого расписания для этого не нужно.
 	if m.store != nil && m.loreRunner != nil && msg.Chat != nil {
-		if p, err := m.store.ResolvePersona(msg.Chat.ID, m.config.DefaultPersona); err == nil {
+		if p, err := m.store.PersonaByKey(m.config.DefaultPersona); err == nil {
 			m.loreRunner.Maybe(msg.Chat.ID, p.ID, p.SystemPrompt)
 		}
 	}
