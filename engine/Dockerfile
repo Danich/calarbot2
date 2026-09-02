@@ -3,6 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 COPY common/ ./common/
 COPY botModules/ ./botModules/
+COPY settings/ ./settings/
 COPY engine/ ./engine/
 RUN go build -o /engine ./engine
 
