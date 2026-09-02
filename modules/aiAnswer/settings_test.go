@@ -59,7 +59,7 @@ func TestSettingsOfHandlesMissingExtra(t *testing.T) {
 // баг задачи 15 — то же самое верно и до неё (см. main.go до этой задачи),
 // так что тест проверяет доезжающую настройку через answer_level, единственный
 // вес, который реально участвует в roll для обычного сообщения.
-func TestIsCalledUsesInjectedReplyWeight(t *testing.T) {
+func TestIsCalledUsesInjectedAnswerLevel(t *testing.T) {
 	m := &Module{config: AIConfig{BotUsername: "calarbot", AnswerLevel: 1001}}
 
 	payload := &botModules.Payload{
