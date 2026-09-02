@@ -14,6 +14,11 @@ import (
 // страницы с полусотней карточек стоит одного вызова на модуль. TTL всё же
 // короткий — options у select'ов модуль считает на лету, и список персон,
 // заведённых без перезапуска, не должен висеть в панели устаревшим.
+//
+// Провалившуюся регистрацию тоже кэшируем, но на отдельное, более короткое
+// окно failTTL: у Register() есть таймаут (см. moduleClient.go), но без кэша
+// лежачий модуль всё равно стоил бы по одному зависанию на каждую карточку
+// чата при отрисовке страницы, а не по одному на всю страницу.
 type Registry struct {
 	modules map[string]string
 	ttl     time.Duration
@@ -25,8 +30,14 @@ type Registry struct {
 
 type cachedReg struct {
 	reg botModules.Registration
+	err error
 	at  time.Time
 }
+
+// failTTL короче обычного ttl нарочно: модуль, который сейчас не отвечает,
+// может отжить в течение секунд, и панель не должна залипать в «не отвечает»
+// дольше, чем нужно, чтобы не долбить его при каждой карточке.
+const failTTL = 5 * time.Second
 
 func NewRegistry(modules map[string]string, ttl time.Duration) *Registry {
 	return &Registry{
@@ -41,18 +52,20 @@ func (r *Registry) Get(name string) (botModules.Registration, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if hit, ok := r.cache[name]; ok && r.now().Sub(hit.at) < r.ttl {
-		return hit.reg, nil
+	if hit, ok := r.cache[name]; ok {
+		window := r.ttl
+		if hit.err != nil {
+			window = failTTL
+		}
+		if r.now().Sub(hit.at) < window {
+			return hit.reg, hit.err
+		}
 	}
 
 	client := &botModules.ModuleClient{BaseURL: r.modules[name]}
 	reg, err := client.Register()
-	if err != nil {
-		return reg, err
-	}
-
-	r.cache[name] = cachedReg{reg: reg, at: r.now()}
-	return reg, nil
+	r.cache[name] = cachedReg{reg: reg, err: err, at: r.now()}
+	return reg, err
 }
 
 // Names отдаёт все модули из реестра, включая лежачие: их тумблеры работают.

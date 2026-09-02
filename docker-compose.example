@@ -97,7 +97,8 @@ services:
       - /opt/calarbot/calarbot.yaml:/calarbot.yaml:ro
       - /opt/calarbot/tokens/.tgtoken:/.tgtoken:ro
       - /opt/calarbot/data:/data
-    # Порт наружу не публикуется: в тайлнет панель выводит sidecar. Как это
-    # поднято на боевом хосте — см. роль calarbot2 в ансибле.
+    # Порт закреплён за loopback — это только для локальной проверки на этой
+    # машине. На боевом хосте наружу ничего не публикуется: в тайлнет панель
+    # выводит sidecar. Как это поднято — см. роль calarbot2 в ансибле.
     ports:
       - "127.0.0.1:8092:8080"

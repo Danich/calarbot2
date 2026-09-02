@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"calarbot2/botModules"
 	"calarbot2/settings"
 )
 
@@ -71,6 +72,46 @@ func TestPageShowsStoredValueNotDefault(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), `value="700"`) {
 		t.Error("page does not show the stored 700")
+	}
+}
+
+// bool и text — не number: у них должны быть чекбокс и текстовое поле, а не
+// два числовых инпута, которые validateValue потом отверг бы с 400.
+func TestPageRendersBoolAndTextFields(t *testing.T) {
+	s, err := settings.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("settings.New: %v", err)
+	}
+	defer s.Close()
+	if err := s.UpsertChat(settings.Chat{ID: -1, Type: "group", Title: "чат", FirstSeen: 1, LastSeen: 1}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	calls := 0
+	reg := botModules.Registration{
+		Order: 100, Label: "Тест",
+		Fields: []botModules.Field{
+			{Key: "loud", Type: botModules.FieldBool, Default: true},
+			{Key: "greeting", Type: botModules.FieldText, Default: "привет"},
+		},
+	}
+	srv := regServer(t, reg, &calls)
+	defer srv.Close()
+
+	p := &Page{Store: s, Registry: NewRegistry(map[string]string{"test": srv.URL}, time.Minute)}
+
+	rec := httptest.NewRecorder()
+	p.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-key="loud" type="checkbox"`) {
+		t.Errorf("bool field did not render as a checkbox:\n%s", body)
+	}
+	if !strings.Contains(body, `data-key="greeting" type="text"`) {
+		t.Errorf("text field did not render as a text input:\n%s", body)
+	}
+	if strings.Contains(body, `data-key="loud" type="number"`) || strings.Contains(body, `data-key="greeting" type="number"`) {
+		t.Error("bool/text fields rendered as number inputs")
 	}
 }
 

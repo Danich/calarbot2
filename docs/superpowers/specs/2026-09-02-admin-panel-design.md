@@ -371,10 +371,18 @@ No new role: the panel is part of the same compose project.
 
 ### Deploy order
 
-The compose file on the host is written by Ansible, while CI runs
-`docker-compose build admin`. Merging to `main` before running the playbook fails
-the deploy with "no such service: admin". Run the playbook first, then merge —
-the same sequence `notify` needed, as the role's handler comments record.
+This branch touches `botModules/`, which is in `REBUILD_EVERYTHING` in
+`detect_changed_services.py`. That means CI does not build `admin` by name —
+it takes the `docker-compose up --build -d` path, which does not care whether
+the host's compose file even has an `admin` service yet, so merging before
+the playbook runs does not fail loudly with something like "no such service:
+admin". The real failure is quieter and worse: that same path also rebuilds
+`engine` against the host's *current* `calarbot.yaml`, which still has no
+`sqlitePath` — the playbook hasn't added it. `InitBot` panics on that empty
+path, the engine container keeps restarting, and the bot goes silent in every
+chat until the playbook runs and the setting appears. Run the playbook first,
+then merge — the same sequence `notify` needed, as the role's handler comments
+record.
 
 The `Register()` change is a breaking protocol change: an old module serving
 `/order` against a new engine calling `/register` does not work. This is already

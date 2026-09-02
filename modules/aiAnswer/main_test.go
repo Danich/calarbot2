@@ -256,8 +256,10 @@ func TestRegisterBoundsTheWeights(t *testing.T) {
 				t.Errorf("%s bounds = %v..%v; want 0..1000", f.Key, f.Min, f.Max)
 			}
 		case "context_size":
-			if f.Min == nil || *f.Min != 0 {
-				t.Errorf("context_size min = %v; want 0", f.Min)
+			// Без верхней границы {"context_size": 1000000000} проходит валидацию
+			// и заставляет GetContext тянуть в промпт всю историю чата.
+			if f.Min == nil || *f.Min != 0 || f.Max == nil || *f.Max != 200 {
+				t.Errorf("context_size bounds = %v..%v; want 0..200", f.Min, f.Max)
 			}
 		}
 	}

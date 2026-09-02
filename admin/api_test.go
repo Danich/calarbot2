@@ -163,6 +163,48 @@ func TestLeaveCallsTelegramAndMarksTheChat(t *testing.T) {
 	}
 }
 
+// POST /leave — «простой» CORS-запрос без preflight, и чужая страница в той же
+// вкладке в тайлнете могла бы кросс-доменно дёрнуть его сама. Origin, который не
+// совпадает с Host запроса, обязан быть отвергнут ещё до вызова телеграма.
+func TestLeaveRefusesCrossOriginPost(t *testing.T) {
+	api, leaver, h := testAPI(t, numberReg())
+	if err := api.Store.UpsertChat(settings.Chat{ID: -1, Type: "group", FirstSeen: 1, LastSeen: 1}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/chats/-1/leave", strings.NewReader(""))
+	req.Header.Set("Origin", "http://evil.example")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403", rec.Code)
+	}
+	if len(leaver.left) != 0 {
+		t.Errorf("LeaveChat calls = %v; want none — кросс-доменный запрос не должен добраться до телеграма", leaver.left)
+	}
+	chats, _ := api.Store.ListChats()
+	if len(chats) != 1 {
+		t.Errorf("ListChats = %+v; want the chat still listed", chats)
+	}
+}
+
+// Прямой заход без Origin (curl, обычная навигация) — не то, от чего защита:
+// он обязан продолжать работать.
+func TestLeaveAllowsRequestWithNoOrigin(t *testing.T) {
+	api, leaver, h := testAPI(t, numberReg())
+	if err := api.Store.UpsertChat(settings.Chat{ID: -1, Type: "group", FirstSeen: 1, LastSeen: 1}); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+
+	if rec := do(t, h, http.MethodPost, "/api/chats/-1/leave", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body %s; want 204", rec.Code, rec.Body)
+	}
+	if len(leaver.left) != 1 || leaver.left[0] != -1 {
+		t.Errorf("LeaveChat calls = %v; want [-1]", leaver.left)
+	}
+}
+
 // Телеграм отказал — чат остаётся в панели: помечать уходом то, из чего не
 // вышли, значит потерять канал из виду.
 func TestLeaveKeepsChatWhenTelegramFails(t *testing.T) {

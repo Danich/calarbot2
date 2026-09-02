@@ -218,7 +218,7 @@ func (m *Module) Register() botModules.Registration {
 			},
 			{
 				Key: "context_size", Label: "Окно контекста (сообщений)", Type: botModules.FieldNumber,
-				Min: intPtr(0), Default: m.config.ContextSize,
+				Min: intPtr(0), Max: intPtr(200), Default: m.config.ContextSize,
 			},
 		},
 	}

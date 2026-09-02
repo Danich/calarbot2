@@ -48,8 +48,19 @@ document.querySelectorAll(".js-field").forEach((input) => {
   input.onchange = () => {
     const row = input.closest(".module");
     const chat = input.closest(".card").dataset.chat;
-    const raw = input.value;
-    const value = input.tagName === "SELECT" ? raw : raw === "" ? null : Number(raw);
+    // Тип берём из самого элемента, а не угадываем по значению: у чекбокса
+    // пустой value не бывает, а у number и text пустая строка означает разное
+    // (число нельзя послать пустым, а null — это «вернуть дефолт»).
+    let value;
+    if (input.tagName === "SELECT") {
+      value = input.value;
+    } else if (input.type === "checkbox") {
+      value = input.checked;
+    } else if (input.type === "number") {
+      value = input.value === "" ? null : Number(input.value);
+    } else {
+      value = input.value === "" ? null : input.value;
+    }
     api("PATCH", `/api/chats/${chat}/settings/${row.dataset.module}`, {
       [input.dataset.key]: value,
     }).catch(fail);

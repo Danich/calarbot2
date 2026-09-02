@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -51,6 +52,29 @@ func TestModuleClientRegisterSinksUnreachableModule(t *testing.T) {
 	}
 	if reg.Order != 9999 {
 		t.Errorf("Order = %d; want 9999", reg.Order)
+	}
+}
+
+// Зависший TCP-коннект к модулю не должен вешать Register навсегда: страницу
+// панели рендерят под общим мьютексом реестра, и одна лежачая карточка иначе
+// заблокировала бы всю панель.
+func TestModuleClientRegisterTimesOutOnHangingServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // никогда не отвечает сам — ждёт, пока не оборвёт клиент
+	}))
+	defer srv.Close()
+
+	c := &ModuleClient{BaseURL: srv.URL}
+
+	start := time.Now()
+	_, err := c.Register()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Register against a hanging server returned nil error")
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("Register took %s; want it bounded by the client timeout", elapsed)
 	}
 }
 

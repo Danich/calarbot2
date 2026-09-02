@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 type ModuleClient struct {
 	BaseURL string
 }
+
+// registerClient — только для Register(). У него, в отличие от клиента
+// IsCalled/Answer, есть таймаут: Register дергают на каждый рендер страницы
+// панели (registry.go держит мьютекс на время вызова), и зависший TCP-коннект
+// к одному модулю не должен вешать всю панель навсегда.
+//
+// IsCalled и Answer таймаута НЕ получают и жить с http.DefaultClient должны и
+// дальше: Answer легитимно ждёт ответ LLM подолгу, и общий таймаут обрезал бы
+// настоящие ответы. Не «упрощайте» это в один клиент на всех.
+var registerClient = &http.Client{Timeout: 5 * time.Second}
 
 // Register спрашивает модуль, кто он и какие у него настройки.
 //
@@ -18,7 +29,7 @@ type ModuleClient struct {
 func (c *ModuleClient) Register() (Registration, error) {
 	fallback := Registration{Order: 9999}
 
-	resp, err := http.Get(c.BaseURL + "/register")
+	resp, err := registerClient.Get(c.BaseURL + "/register")
 	if err != nil {
 		return fallback, fmt.Errorf("register %s: %w", c.BaseURL, err)
 	}

@@ -64,6 +64,10 @@
                   {{$v := .Value}}
                   {{range .Options}}<option value="{{.Value}}" {{if eq .Value $v}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Value}}{{end}}</option>{{end}}
                 </select>
+                {{else if eq .Type "bool"}}
+                <input class="input js-field" data-key="{{.Key}}" type="checkbox" {{if .Value}}checked{{end}}>
+                {{else if eq .Type "text"}}
+                <input class="input js-field" data-key="{{.Key}}" type="text" value="{{.Value}}">
                 {{else}}
                 <input class="input js-field" data-key="{{.Key}}" type="number"
                        {{if .Min}}min="{{.Min}}"{{end}} {{if .Max}}max="{{.Max}}"{{end}}

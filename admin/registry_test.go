@@ -74,6 +74,39 @@ func TestRegistryReportsUnreachableModule(t *testing.T) {
 	}
 }
 
+// Лежачий модуль не должен стоить по TCP-соединению на каждую карточку чата
+// при отрисовке страницы: провал регистрации кэшируется отдельно от успеха, на
+// собственное короткое окно.
+func TestRegistryDialsFailingModuleOnceWithinFailureWindow(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	now := time.Unix(1000, 0)
+	r := NewRegistry(map[string]string{"dead": srv.URL}, time.Minute)
+	r.now = func() time.Time { return now }
+
+	for i := 0; i < 3; i++ {
+		if _, err := r.Get("dead"); err == nil {
+			t.Fatal("Get on a failing module returned nil error")
+		}
+	}
+	if calls != 1 {
+		t.Errorf("module was dialled %d times within the failure window; want 1", calls)
+	}
+
+	now = now.Add(6 * time.Second)
+	if _, err := r.Get("dead"); err == nil {
+		t.Fatal("Get on a failing module returned nil error")
+	}
+	if calls != 2 {
+		t.Errorf("module was dialled %d times after the failure window passed; want 2", calls)
+	}
+}
+
 func TestRegistryNamesOrderedByModuleOrder(t *testing.T) {
 	calls := 0
 	late := regServer(t, botModules.Registration{Order: 1000}, &calls)

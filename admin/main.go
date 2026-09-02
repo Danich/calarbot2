@@ -41,6 +41,12 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
+	// Без этой проверки панель открыла бы sqlite по пустому пути вместо явной
+	// ошибки. У движка та же защита — в InitBot.
+	if config.SQLitePath == "" {
+		log.Fatalf("sqlitePath is empty: the admin panel cannot open the settings database without it")
+	}
+
 	store, err := settings.New(config.SQLitePath)
 	if err != nil {
 		log.Fatalf("settings: %v", err)
@@ -80,8 +86,10 @@ func main() {
 		port = "8080"
 	}
 
-	// Порта наружу у контейнера нет вовсе: в тайлнет его выводит sidecar, с
-	// которым панель делит сетевое пространство имён.
+	// Панель слушает этот порт сама. На боевом хосте наружу он не публикуется —
+	// в тайлнет её выводит sidecar, с которым панель делит сетевое пространство
+	// имён; в docker-compose.example порт пробрасывается на loopback только для
+	// локальной проверки на этой машине.
 	log.Printf("admin listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatal(err)

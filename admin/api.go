@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"calarbot2/botModules"
@@ -168,7 +169,23 @@ func validateValue(f botModules.Field, v any) (string, error) {
 
 // leave помечает чат покинутым только после того, как телеграм подтвердил
 // выход: иначе панель потеряет из виду канал, в котором бот остался.
+//
+// Только у этой ручки проверяем Origin. PATCH-запросы у панели всегда с JSON-
+// телом, значит всегда с preflight, и браузер их кросс-доменно без разрешения
+// не отправит. POST /leave тела не несёт — для CORS это «простой» запрос, его
+// браузер шлёт кросс-доменно без preflight, и любая страница, открытая в той же
+// вкладке в тайлнете, могла бы тихо вынести бота из чата. Это не аутентификация
+// (панель и так без неё), а защита именно от межсайтового POST из браузера —
+// прямой заход без Origin (curl, открыть ссылку) остаётся разрешён.
 func (a *API) leave(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request refused", http.StatusForbidden)
+			return
+		}
+	}
+
 	chatID, err := chatIDFrom(r)
 	if err != nil {
 		http.Error(w, "bad chat id", http.StatusBadRequest)
