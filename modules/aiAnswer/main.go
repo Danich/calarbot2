@@ -262,9 +262,19 @@ func (m *Module) IsCalled(payload *botModules.Payload) bool {
 			m.loreRunner.Maybe(msg.Chat.ID, p.ID, p.SystemPrompt)
 		}
 	}
-	if isDirectAddress(msg, m.config.BotUsername) {
-		return true
-	}
+	// Прямое обращение больше не отвечает за бота само.
+	//
+	// Раньше здесь стоял ранний выход: реплай или упоминание — и IsCalled
+	// возвращал true, не глядя ни на что дальше. А обе ветки ниже, которые
+	// прибавляют reply_weight и call_weight, срабатывают ровно в этих же
+	// случаях — то есть до них управление не доходило никогда, и оба веса
+	// были мёртвым кодом. Панель показывала две крутилки, которые ни на что
+	// не влияли.
+	//
+	// Теперь обращение прибавляет свой вес к броску, как и задумывалось.
+	// Гарантия ответа при этом не потеряна, она стала настраиваемой: вес не
+	// меньше answer_level означает «отвечать всегда», потому что минимальный
+	// бросок — ноль.
 	roll := rand.Intn(DiceSize + 1)
 	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
 		msg.ReplyToMessage.From.UserName == m.config.BotUsername {

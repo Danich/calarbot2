@@ -89,3 +89,92 @@ func plainMessage() *tgbotapi.Message {
 		Text: "ага",
 	}
 }
+
+// Ниже — про то, что прямое обращение больше не отвечает само, а прибавляет
+// вес. Пороги за пределами 0..1000 выбраны нарочно: бросок d1000 делает исход
+// однозначным в обе стороны, и тест не зависит от удачи.
+
+func mentionMessage(botUsername string) *tgbotapi.Message {
+	text := "@" + botUsername + " ты тут?"
+	return &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: -1},
+		From: &tgbotapi.User{ID: 5, UserName: "человек"},
+		Text: text,
+		Entities: []tgbotapi.MessageEntity{
+			{Type: "mention", Offset: 0, Length: len([]rune("@" + botUsername))},
+		},
+	}
+}
+
+func replyToBotMessage(botUsername string) *tgbotapi.Message {
+	return &tgbotapi.Message{
+		Chat:           &tgbotapi.Chat{ID: -1},
+		From:           &tgbotapi.User{ID: 5, UserName: "человек"},
+		Text:           "ага",
+		ReplyToMessage: &tgbotapi.Message{From: &tgbotapi.User{UserName: botUsername}},
+	}
+}
+
+func TestMentionAddsCallWeight(t *testing.T) {
+	m := &Module{config: AIConfig{BotUsername: "calarbot"}}
+
+	payload := &botModules.Payload{
+		Msg:   mentionMessage("calarbot"),
+		Extra: map[string]interface{}{"settings": map[string]any{"answer_level": 1001, "call_weight": 1001}},
+	}
+
+	if !m.IsCalled(payload) {
+		t.Fatal("IsCalled = false; вес обращения не прибавился к броску")
+	}
+}
+
+func TestReplyAddsReplyWeight(t *testing.T) {
+	m := &Module{config: AIConfig{BotUsername: "calarbot"}}
+
+	payload := &botModules.Payload{
+		Msg:   replyToBotMessage("calarbot"),
+		Extra: map[string]interface{}{"settings": map[string]any{"answer_level": 1001, "reply_weight": 1001}},
+	}
+
+	if !m.IsCalled(payload) {
+		t.Fatal("IsCalled = false; вес реплая не прибавился к броску")
+	}
+}
+
+// Главное следствие правки: обращение само по себе больше не гарантирует
+// ответ. При нулевом весе и недостижимом пороге бот молчит — раньше здесь был
+// безусловный true.
+func TestDirectAddressNoLongerGuaranteesAnAnswer(t *testing.T) {
+	m := &Module{config: AIConfig{BotUsername: "calarbot"}}
+
+	for name, msg := range map[string]*tgbotapi.Message{
+		"упоминание": mentionMessage("calarbot"),
+		"реплай":     replyToBotMessage("calarbot"),
+	} {
+		payload := &botModules.Payload{
+			Msg: msg,
+			Extra: map[string]interface{}{"settings": map[string]any{
+				"answer_level": 1001, "call_weight": 0, "reply_weight": 0,
+			}},
+		}
+		if m.IsCalled(payload) {
+			t.Errorf("%s: IsCalled = true при нулевом весе; ранний выход не убран", name)
+		}
+	}
+}
+
+// А гарантия никуда не делась — она стала настраиваемой: вес не меньше порога
+// значит «всегда», потому что минимальный бросок нулевой.
+func TestWeightAtOrAboveThresholdAlwaysAnswers(t *testing.T) {
+	m := &Module{config: AIConfig{BotUsername: "calarbot"}}
+
+	for i := 0; i < 200; i++ {
+		payload := &botModules.Payload{
+			Msg:   mentionMessage("calarbot"),
+			Extra: map[string]interface{}{"settings": map[string]any{"answer_level": 990, "call_weight": 990}},
+		}
+		if !m.IsCalled(payload) {
+			t.Fatalf("IsCalled = false на броске %d; вес >= порога должен отвечать всегда", i)
+		}
+	}
+}
