@@ -20,6 +20,7 @@ type Bot struct {
 	BotAPI         *tgbotapi.BotAPI
 	Flags          map[string]bool
 	Modules        map[string]*botModules.ModuleClient
+	Registrations  map[string]botModules.Registration
 	BotConfig      *CalarbotConfig
 	orderedModules []string
 }
@@ -62,13 +63,15 @@ func (b *Bot) InitModules() {
 	if b.Modules == nil {
 		b.Modules = make(map[string]*botModules.ModuleClient)
 	}
+	b.Registrations = make(map[string]botModules.Registration)
 	for configName, moduleConfig := range b.BotConfig.Modules {
 		b.Modules[configName] = &botModules.ModuleClient{BaseURL: moduleConfig.Url}
-		moduleOrders = append(moduleOrders, moduleOrder{
-			name:  configName,
-			order: b.Modules[configName].Order(),
-		})
-
+		reg, err := b.Modules[configName].Register()
+		if err != nil {
+			log.Printf("module %s did not register: %v", configName, err)
+		}
+		b.Registrations[configName] = reg
+		moduleOrders = append(moduleOrders, moduleOrder{name: configName, order: reg.Order})
 	}
 
 	moduleOrders = sortModules(moduleOrders)
@@ -82,7 +85,7 @@ func (b *Bot) InitModules() {
 	fmt.Println("Initialized modules:")
 	for _, moduleName := range b.orderedModules {
 		client := b.Modules[moduleName]
-		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, client.Order())
+		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, b.Registrations[moduleName].Order)
 	}
 }
 

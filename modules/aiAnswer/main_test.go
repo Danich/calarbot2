@@ -13,8 +13,8 @@ import (
 
 func TestModuleOrder(t *testing.T) {
 	m := NewModule(42, AIConfig{BotUsername: "testbot", AnswerLevel: 500})
-	if m.Order() != 42 {
-		t.Errorf("Order() = %d, want 42", m.Order())
+	if m.Register().Order != 42 {
+		t.Errorf("Register().Order = %d, want 42", m.Register().Order)
 	}
 }
 

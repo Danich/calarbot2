@@ -17,7 +17,7 @@ import (
 // shutting down the server when done by calling the server's Shutdown method.
 func ServeModule(module BotModule, addr string) (*http.Server, <-chan error) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/order", orderAction(module))
+	mux.HandleFunc("/register", registerAction(module))
 	mux.HandleFunc("/is_called", isCalledAction(module))
 	mux.HandleFunc("/answer", answerAction(module))
 
@@ -74,12 +74,10 @@ func isCalledAction(module BotModule) func(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func orderAction(module BotModule) func(w http.ResponseWriter, r *http.Request) {
+func registerAction(module BotModule) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		order := module.Order()
-		err := json.NewEncoder(w).Encode(map[string]int{"order": order})
-		if err != nil {
-			fmt.Printf("error encoding order: %v", err)
+		if err := json.NewEncoder(w).Encode(module.Register()); err != nil {
+			fmt.Printf("error encoding registration: %v", err)
 		}
 	}
 }

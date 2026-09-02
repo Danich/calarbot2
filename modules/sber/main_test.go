@@ -10,8 +10,8 @@ import (
 
 func TestModuleOrder(t *testing.T) {
 	module := Module{order: 42}
-	if module.Order() != 42 {
-		t.Errorf("Expected order to be 42, got %d", module.Order())
+	if module.Register().Order != 42 {
+		t.Errorf("Expected order to be 42, got %d", module.Register().Order)
 	}
 }
 

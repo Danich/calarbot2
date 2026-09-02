@@ -5,20 +5,21 @@ import (
 )
 
 type ModuleClientInterface interface {
-	Order() int
+	Register() (botModules.Registration, error)
 	IsCalled(payload *botModules.Payload) (bool, error)
 	Answer(payload *botModules.Payload) (botModules.RichAnswer, error)
 }
 
 type MockModuleClient struct {
-	BaseURL         string
-	OrderValue      int
-	IsCalledResult  bool
-	IsCalledError   error
-	AnswerResult    botModules.RichAnswer
-	AnswerError     error
-	IsCalledPayload *botModules.Payload
-	AnswerPayload   *botModules.Payload
+	BaseURL           string
+	RegistrationValue botModules.Registration
+	RegistrationError error
+	IsCalledResult    bool
+	IsCalledError     error
+	AnswerResult      botModules.RichAnswer
+	AnswerError       error
+	IsCalledPayload   *botModules.Payload
+	AnswerPayload     *botModules.Payload
 }
 
 func NewMockModuleClient() *MockModuleClient {
@@ -27,8 +28,8 @@ func NewMockModuleClient() *MockModuleClient {
 	}
 }
 
-func (m *MockModuleClient) Order() int {
-	return m.OrderValue
+func (m *MockModuleClient) Register() (botModules.Registration, error) {
+	return m.RegistrationValue, m.RegistrationError
 }
 
 func (m *MockModuleClient) IsCalled(payload *botModules.Payload) (bool, error) {

@@ -16,13 +16,13 @@ import (
 
 // MockModule implements the BotModule interface for testing
 type MockModule struct {
-	OrderValue   int
-	IsCalledFunc func(*tgbotapi.Message) bool
-	AnswerFunc   func(*Payload) (RichAnswer, error)
+	RegistrationValue Registration
+	IsCalledFunc      func(*tgbotapi.Message) bool
+	AnswerFunc        func(*Payload) (RichAnswer, error)
 }
 
-func (m *MockModule) Order() int {
-	return m.OrderValue
+func (m *MockModule) Register() Registration {
+	return m.RegistrationValue
 }
 
 func (m *MockModule) IsCalled(msg *tgbotapi.Message) bool {
@@ -42,7 +42,7 @@ func (m *MockModule) Answer(payload *Payload) (RichAnswer, error) {
 func TestServeModule(t *testing.T) {
 	// Create a mock module
 	mockModule := &MockModule{
-		OrderValue: 42,
+		RegistrationValue: Registration{Order: 42},
 		IsCalledFunc: func(msg *tgbotapi.Message) bool {
 			if msg == nil {
 				return false
@@ -89,9 +89,9 @@ func TestServeModule(t *testing.T) {
 	// Give the server time to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Test the /order endpoint
-	t.Run("order endpoint", func(t *testing.T) {
-		resp, err := http.Get("http://" + addr + "/order")
+	// Test the /register endpoint
+	t.Run("register endpoint", func(t *testing.T) {
+		resp, err := http.Get("http://" + addr + "/register")
 		if err != nil {
 			t.Fatalf("Failed to make request: %v", err)
 		}
@@ -101,15 +101,13 @@ func TestServeModule(t *testing.T) {
 			t.Errorf("Expected status OK, got %v", resp.Status)
 		}
 
-		var result struct {
-			Order int `json:"order"`
-		}
+		var result Registration
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if result.Order != mockModule.OrderValue {
-			t.Errorf("Expected order %d, got %d", mockModule.OrderValue, result.Order)
+		if result.Order != mockModule.RegistrationValue.Order {
+			t.Errorf("Expected order %d, got %d", mockModule.RegistrationValue.Order, result.Order)
 		}
 	})
 

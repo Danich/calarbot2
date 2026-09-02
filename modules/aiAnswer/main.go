@@ -189,7 +189,13 @@ func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
 	return p, p.SystemPrompt + "\n\n" + block
 }
 
-func (m *Module) Order() int { return m.order }
+func (m *Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "AI-ответ",
+		Description: "Отвечает через языковую модель",
+	}
+}
 
 func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	if msg == nil {

@@ -74,7 +74,13 @@ type Module struct {
 	bot     *tgbotapi.BotAPI
 }
 
-func (m *Module) Order() int { return m.order }
+func (m *Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "Сказка",
+		Description: "Играет с чатом в сочинение сказки",
+	}
+}
 
 func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	if msg.IsCommand() {

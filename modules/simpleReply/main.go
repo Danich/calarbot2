@@ -13,7 +13,13 @@ type Module struct {
 	order int
 }
 
-func (m Module) Order() int                        { return m.order }
+func (m Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "Простой ответ",
+		Description: "Отвечает «тыква», когда не сработал никто другой",
+	}
+}
 func (m Module) IsCalled(_ *tgbotapi.Message) bool { return true }
 func (m Module) Answer(msg *botModules.Payload) (botModules.RichAnswer, error) {
 	return botModules.RichAnswer{Text: msg.Msg.Text}, nil
