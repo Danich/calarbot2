@@ -205,6 +205,9 @@ func (b *Bot) RunBot() {
 
 			for _, moduleName := range b.orderedModules {
 				client := b.Modules[moduleName]
+				// Настройки кладём до shouldIAnswer: модуль решает, отвечать ли,
+				// уже с их учётом — веса живут именно там.
+				payload.Extra["settings"] = b.settingsFor(update.Message.Chat.ID, moduleName)
 				if !b.shouldIAnswer(moduleName, update, client, payload) {
 					continue
 				}
@@ -244,12 +247,28 @@ func (b *Bot) RunBot() {
 	}
 }
 
+// settingsFor собирает настройки модуля для чата: явно выставленные значения
+// поверх дефолтов, которые модуль объявил при регистрации.
+func (b *Bot) settingsFor(chatID int64, moduleName string) map[string]any {
+	return settings.Resolve(
+		b.Registrations[moduleName].Fields,
+		b.Settings.Values(chatID, moduleName),
+	)
+}
+
 func (b *Bot) shouldIAnswer(
 	moduleName string,
 	update tgbotapi.Update,
 	client interface{},
 	payload *botModules.Payload,
 ) bool {
+	if update.Message == nil || update.Message.Chat == nil {
+		return false
+	}
+	if !b.Settings.ModuleEnabled(update.Message.Chat.ID, moduleName) {
+		return false
+	}
+
 	var isCalled bool
 	var err error
 
