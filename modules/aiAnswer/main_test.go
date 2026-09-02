@@ -202,6 +202,67 @@ func TestSystemPromptKeepsCanonWhenLoreQueryFails(t *testing.T) {
 	}
 }
 
+func TestRegisterDeclaresConfigValuesAsDefaults(t *testing.T) {
+	m := &Module{order: 100, config: AIConfig{
+		AnswerLevel: 990, CallWeight: 700, ReplyWeight: 400,
+		ContextSize: 10, DefaultPersona: "mamkin",
+	}}
+
+	reg := m.Register()
+
+	if reg.Order != 100 || reg.Label != "AI-ответ" {
+		t.Errorf("Registration = %+v; want order 100, label AI-ответ", reg)
+	}
+
+	byKey := map[string]botModules.Field{}
+	for _, f := range reg.Fields {
+		byKey[f.Key] = f
+	}
+
+	// Сегодняшняя настройка обязана стать дефолтом нового канала — это и есть
+	// весь механизм «прикопать нынешние значения», отдельного нет.
+	for key, want := range map[string]any{
+		"answer_level": 990, "call_weight": 700, "reply_weight": 400, "context_size": 10,
+	} {
+		f, ok := byKey[key]
+		if !ok {
+			t.Fatalf("Register did not declare %s", key)
+		}
+		if f.Default != want {
+			t.Errorf("%s default = %v; want %v", key, f.Default, want)
+		}
+		if f.Type != botModules.FieldNumber {
+			t.Errorf("%s type = %q; want number", key, f.Type)
+		}
+	}
+
+	if byKey["persona"].Default != "mamkin" {
+		t.Errorf("persona default = %v; want mamkin", byKey["persona"].Default)
+	}
+	if byKey["persona"].Type != botModules.FieldSelect {
+		t.Errorf("persona type = %q; want select", byKey["persona"].Type)
+	}
+}
+
+// Веса — это бросок d1000, значения вне диапазона осмысленного смысла не имеют,
+// и админка обязана узнать границы от модуля, а не угадать их.
+func TestRegisterBoundsTheWeights(t *testing.T) {
+	m := &Module{config: AIConfig{}}
+
+	for _, f := range m.Register().Fields {
+		switch f.Key {
+		case "answer_level", "call_weight", "reply_weight":
+			if f.Min == nil || *f.Min != 0 || f.Max == nil || *f.Max != 1000 {
+				t.Errorf("%s bounds = %v..%v; want 0..1000", f.Key, f.Min, f.Max)
+			}
+		case "context_size":
+			if f.Min == nil || *f.Min != 0 {
+				t.Errorf("context_size min = %v; want 0", f.Min)
+			}
+		}
+	}
+}
+
 func TestExtractMentions(t *testing.T) {
 	tests := []struct {
 		name     string

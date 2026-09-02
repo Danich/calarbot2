@@ -189,12 +189,57 @@ func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
 	return p, p.SystemPrompt + "\n\n" + block
 }
 
+func intPtr(v int) *int { return &v }
+
+// Register описывает форму настроек для админки и отдаёт свои конфигурационные
+// значения как дефолты: канал, которого никто не трогал, ведёт себя ровно так,
+// как настроен бот в целом.
 func (m *Module) Register() botModules.Registration {
 	return botModules.Registration{
 		Order:       m.order,
 		Label:       "AI-ответ",
 		Description: "Отвечает через языковую модель",
+		Fields: []botModules.Field{
+			{
+				Key: "persona", Label: "Персона", Type: botModules.FieldSelect,
+				Options: m.personaOptions(), Default: m.config.DefaultPersona,
+			},
+			{
+				Key: "answer_level", Label: "Вес: обычный триггер", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.AnswerLevel,
+			},
+			{
+				Key: "call_weight", Label: "Вес: по обращению", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.CallWeight,
+			},
+			{
+				Key: "reply_weight", Label: "Вес: по реплаю", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.ReplyWeight,
+			},
+			{
+				Key: "context_size", Label: "Окно контекста (сообщений)", Type: botModules.FieldNumber,
+				Min: intPtr(0), Default: m.config.ContextSize,
+			},
+		},
 	}
+}
+
+// personaOptions считается на каждый вызов: персоны живут в базе и заводятся
+// без перезапуска, поэтому зашить их список было бы неверно.
+func (m *Module) personaOptions() []botModules.Option {
+	if m.store == nil {
+		return nil
+	}
+	personas, err := m.store.ListPersonas()
+	if err != nil {
+		log.Printf("list personas: %v", err)
+		return nil
+	}
+	opts := make([]botModules.Option, 0, len(personas))
+	for _, p := range personas {
+		opts = append(opts, botModules.Option{Value: p.Key, Label: p.Name})
+	}
+	return opts
 }
 
 func (m *Module) IsCalled(payload *botModules.Payload) bool {
