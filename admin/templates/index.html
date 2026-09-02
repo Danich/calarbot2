@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>calarbot2</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav class="nav">
+  <span class="brand">calarbot2</span>
+  <button class="tab is-active" data-tab="channels">Каналы</button>
+  <button class="tab" data-tab="dms">Личные сообщения</button>
+</nav>
+
+<main class="column">
+  <section id="channels">
+    <header class="head"><h1>Каналы</h1><span class="count">{{len .Channels}}</span></header>
+    <div class="list">
+      {{range .Channels}}
+      <article class="card" data-chat="{{.ID}}">
+        <div class="card-head">
+          <div>
+            <div class="row">
+              <span class="name">{{if .Title}}{{.Title}}{{else}}без названия{{end}}</span>
+              <span class="id">{{.ID}}</span>
+              <span class="tag tag-neutral">{{.TypeLabel}}</span>
+            </div>
+            <div class="row tags">
+              {{if .EnabledLabels}}
+                {{range .EnabledLabels}}<span class="tag tag-outline">{{.}}</span>{{end}}
+              {{else}}
+                <span class="muted">Все модули выключены</span>
+              {{end}}
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn-icon btn-secondary js-leave" title="Выйти из канала">⎋</button>
+            <button class="btn-icon btn-secondary js-expand" title="Развернуть">⌄</button>
+          </div>
+        </div>
+
+        <div class="panel" hidden>
+          {{range .Modules}}
+          <div class="module" data-module="{{.Key}}">
+            <div class="module-head">
+              <div>
+                <div class="module-label">{{.Label}}</div>
+                <div class="muted">{{.Description}}</div>
+              </div>
+              <div class="seg">
+                <label class="seg-opt"><input type="radio" class="js-toggle" value="1" {{if .Enabled}}checked{{end}}> Включён</label>
+                <label class="seg-opt"><input type="radio" class="js-toggle" value="0" {{if not .Enabled}}checked{{end}}> Выключен</label>
+              </div>
+            </div>
+            {{if .Err}}<div class="muted err">{{.Err}}</div>{{end}}
+            {{if .Fields}}
+            <div class="settings" {{if not .Enabled}}hidden{{end}}>
+              {{range .Fields}}
+              <label class="field">
+                <span>{{.Label}}</span>
+                {{if eq .Type "select"}}
+                <select class="input js-field" data-key="{{.Key}}">
+                  {{$v := .Value}}
+                  {{range .Options}}<option value="{{.Value}}" {{if eq .Value $v}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Value}}{{end}}</option>{{end}}
+                </select>
+                {{else}}
+                <input class="input js-field" data-key="{{.Key}}" type="number"
+                       {{if .Min}}min="{{.Min}}"{{end}} {{if .Max}}max="{{.Max}}"{{end}}
+                       value="{{.Value}}">
+                {{end}}
+              </label>
+              {{end}}
+            </div>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+      </article>
+      {{end}}
+    </div>
+  </section>
+
+  <section id="dms" hidden>
+    <header class="head"><h1>Личные сообщения</h1><span class="count">{{len .DMs}}</span></header>
+    <table class="table">
+      <thead><tr><th>Имя</th><th>User ID</th><th>Последняя активность</th></tr></thead>
+      <tbody>
+        {{range .DMs}}
+        <tr data-chat="{{.ID}}">
+          <td>{{.Title}}<div class="muted">@{{.Username}}</div></td>
+          <td class="id">{{.ID}}</td>
+          <td class="muted">{{.LastSeenText}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<dialog class="dialog" id="confirm">
+  <p id="confirm-text"></p>
+  <div class="dialog-actions">
+    <button value="cancel" class="btn-secondary" id="confirm-no">Отмена</button>
+    <button class="btn-primary" id="confirm-yes">Выйти</button>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
