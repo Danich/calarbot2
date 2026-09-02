@@ -3,6 +3,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -24,19 +27,33 @@ func (m *MockBotAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
 }
 
 func TestInitModules(t *testing.T) {
+	// Регистрируем модули по-настоящему, с разными Order: если оба модуля
+	// недоступны, Register() отдаёт им один и тот же fallback Order 9999, и
+	// sort.Slice (не стабильная сортировка) вперемешку с рандомизированным
+	// порядком обхода карты модулей решает их порядок произвольно —
+	// проверка ниже была бы недетерминированной.
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(botModules.Registration{Order: 10, Label: "module1"})
+	}))
+	defer server1.Close()
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(botModules.Registration{Order: 20, Label: "module2"})
+	}))
+	defer server2.Close()
+
 	// Create real ModuleClient instances for the bot
-	moduleClient1 := &botModules.ModuleClient{BaseURL: "http://localhost:8080"}
-	moduleClient2 := &botModules.ModuleClient{BaseURL: "http://localhost:8081"}
+	moduleClient1 := &botModules.ModuleClient{BaseURL: server1.URL}
+	moduleClient2 := &botModules.ModuleClient{BaseURL: server2.URL}
 
 	// Create a bot with a mock configuration
 	bot := &Bot{
 		BotConfig: &CalarbotConfig{
 			Modules: map[string]ModulesConfig{
 				"module1": {
-					Url: "http://localhost:8080",
+					Url: server1.URL,
 				},
 				"module2": {
-					Url: "http://localhost:8081",
+					Url: server2.URL,
 				},
 			},
 		},
