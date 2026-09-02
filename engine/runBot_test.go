@@ -33,12 +33,10 @@ func TestInitModules(t *testing.T) {
 		BotConfig: &CalarbotConfig{
 			Modules: map[string]ModulesConfig{
 				"module1": {
-					Url:       "http://localhost:8080",
-					EnabledOn: []int64{123456789},
+					Url: "http://localhost:8080",
 				},
 				"module2": {
-					Url:       "http://localhost:8081",
-					EnabledOn: []int64{987654321},
+					Url: "http://localhost:8081",
 				},
 			},
 		},
@@ -72,52 +70,30 @@ func TestShouldIAnswer(t *testing.T) {
 		name           string
 		moduleName     string
 		chatID         int64
-		enabledOn      []int64
 		isCalledResult bool
 		isCalledError  error
 		expected       bool
 	}{
 		{
-			name:           "module enabled and called",
+			name:           "module called",
 			moduleName:     "module1",
 			chatID:         123456789,
-			enabledOn:      []int64{123456789},
 			isCalledResult: true,
 			isCalledError:  nil,
 			expected:       true,
 		},
 		{
-			name:           "module enabled but not called",
+			name:           "module not called",
 			moduleName:     "module1",
 			chatID:         123456789,
-			enabledOn:      []int64{123456789},
 			isCalledResult: false,
 			isCalledError:  nil,
 			expected:       false,
 		},
 		{
-			name:           "module not enabled",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      []int64{987654321},
-			isCalledResult: true,
-			isCalledError:  nil,
-			expected:       false,
-		},
-		{
-			name:           "module enabled for all chats",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      nil,
-			isCalledResult: true,
-			isCalledError:  nil,
-			expected:       true,
-		},
-		{
 			name:           "error checking if called",
 			moduleName:     "module1",
 			chatID:         123456789,
-			enabledOn:      []int64{123456789},
 			isCalledResult: false,
 			isCalledError:  &tgbotapi.Error{},
 			expected:       false,
@@ -131,8 +107,7 @@ func TestShouldIAnswer(t *testing.T) {
 				BotConfig: &CalarbotConfig{
 					Modules: map[string]ModulesConfig{
 						tt.moduleName: {
-							Url:       "http://localhost:8080",
-							EnabledOn: tt.enabledOn,
+							Url: "http://localhost:8080",
 						},
 					},
 				},
@@ -166,12 +141,10 @@ func TestShouldIAnswer(t *testing.T) {
 			}
 
 			// Verify that IsCalled was called with the correct payload
-			if tt.enabledOn == nil || (tt.chatID != 0 && contains(tt.enabledOn, tt.chatID)) {
-				if mockClient.IsCalledPayload == nil {
-					t.Errorf("IsCalled was not called")
-				} else if mockClient.IsCalledPayload.Msg != update.Message {
-					t.Errorf("IsCalled was called with wrong message")
-				}
+			if mockClient.IsCalledPayload == nil {
+				t.Errorf("IsCalled was not called")
+			} else if mockClient.IsCalledPayload.Msg != update.Message {
+				t.Errorf("IsCalled was called with wrong message")
 			}
 		})
 	}
@@ -263,13 +236,4 @@ func TestSortModules(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(slice []int64, value int64) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
 }

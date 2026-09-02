@@ -6,11 +6,12 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/botModules"
-	"calarbot2/common"
+	"calarbot2/settings"
 )
 
 // Ensure mock_module_client.go is included in the build
@@ -21,6 +22,8 @@ type Bot struct {
 	Flags          map[string]bool
 	Modules        map[string]*botModules.ModuleClient
 	Registrations  map[string]botModules.Registration
+	SettingsStore  *settings.Store
+	Settings       *settings.Cache
 	BotConfig      *CalarbotConfig
 	orderedModules []string
 }
@@ -38,6 +41,18 @@ func readToken(filename string) (string, error) {
 
 func (b *Bot) InitBot(config *CalarbotConfig) {
 	b.BotConfig = config
+
+	// Паникуем, а не работаем без базы: без неё каждый модуль выключен, и бот
+	// молча онемел бы во всех чатах сразу.
+	if b.BotConfig.SQLitePath == "" {
+		log.Panic("sqlitePath is empty: the engine cannot resolve module settings without it")
+	}
+	settingsStore, err := settings.New(b.BotConfig.SQLitePath)
+	if err != nil {
+		log.Panic(err)
+	}
+	b.SettingsStore = settingsStore
+	b.Settings = settings.NewCache(settingsStore, 5*time.Second)
 
 	token, err := readToken(b.BotConfig.TgTokenFile)
 	if err != nil {
@@ -170,10 +185,6 @@ func (b *Bot) shouldIAnswer(
 	client interface{},
 	payload *botModules.Payload,
 ) bool {
-	if b.BotConfig.Modules[moduleName].EnabledOn != nil && !common.Contains(b.BotConfig.Modules[moduleName].EnabledOn, update.Message.Chat.ID) {
-		return false
-	}
-
 	var isCalled bool
 	var err error
 
