@@ -25,9 +25,13 @@ document.querySelectorAll(".tab").forEach((tab) => {
 
 document.querySelectorAll(".js-expand").forEach((btn) => {
   btn.onclick = () => {
-    const panel = btn.closest(".card").querySelector(".panel");
+    const card = btn.closest(".card");
+    const panel = card.querySelector(".panel");
     panel.hidden = !panel.hidden;
-    btn.style.transform = panel.hidden ? "" : "rotate(180deg)";
+    // Класс на карточке, а не инлайновый transform: поворот шеврона —
+    // забота стилей, и состояние «развёрнуто» нужно им же.
+    card.classList.toggle("is-open", !panel.hidden);
+    btn.setAttribute("aria-expanded", String(!panel.hidden));
   };
 });
 
