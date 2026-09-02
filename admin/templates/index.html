@@ -35,8 +35,8 @@
             </div>
           </div>
           <div class="actions">
-            <button class="btn-icon btn-secondary js-leave" title="Выйти из канала">⎋</button>
-            <button class="btn-icon btn-secondary js-expand" title="Развернуть">⌄</button>
+            <button type="button" class="btn btn-secondary btn-icon js-leave" aria-label="Выйти из канала" title="Выйти из канала"><svg width="15" height="15" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M124,208a12,12,0,0,1-12,12H48a20,20,0,0,1-20-20V56A20,20,0,0,1,48,36h64a12,12,0,0,1,0,24H52V196h60A12,12,0,0,1,124,208Zm108.49-88.49-40-40a12,12,0,0,0-17,17L195.51,116H112a12,12,0,0,0,0,24h83.51l-20.02,20.02a12,12,0,0,0,17,17l40-40A12,12,0,0,0,232.49,119.51Z"/></svg></button>
+            <button type="button" class="btn btn-secondary btn-icon js-expand" aria-label="Развернуть" aria-expanded="false"><svg class="cb-chevron" width="14" height="14" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></svg></button>
           </div>
         </div>
 
@@ -48,9 +48,9 @@
                 <div class="module-label">{{.Label}}</div>
                 <div class="muted">{{.Description}}</div>
               </div>
-              <div class="seg">
-                <label class="seg-opt"><input type="radio" class="js-toggle" value="1" {{if .Enabled}}checked{{end}}> Включён</label>
-                <label class="seg-opt"><input type="radio" class="js-toggle" value="0" {{if not .Enabled}}checked{{end}}> Выключен</label>
+              <div class="seg" role="radiogroup" aria-label="{{.Label}}">
+                <label class="seg-opt"><input type="radio" class="js-toggle" value="1" {{if .Enabled}}checked{{end}}>Включён</label>
+                <label class="seg-opt"><input type="radio" class="js-toggle" value="0" {{if not .Enabled}}checked{{end}}>Выключен</label>
               </div>
             </div>
             {{if .Err}}<div class="muted err">{{.Err}}</div>{{end}}
@@ -105,8 +105,8 @@
 <dialog class="dialog" id="confirm">
   <p id="confirm-text"></p>
   <div class="dialog-actions">
-    <button value="cancel" class="btn-secondary" id="confirm-no">Отмена</button>
-    <button class="btn-primary" id="confirm-yes">Выйти</button>
+    <button type="button" class="btn btn-secondary" id="confirm-no">Отмена</button>
+    <button type="button" class="btn btn-primary" id="confirm-yes">Выйти</button>
   </div>
 </dialog>
 
