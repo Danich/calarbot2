@@ -54,6 +54,10 @@ func (b *Bot) InitBot(config *CalarbotConfig) {
 	b.SettingsStore = settingsStore
 	b.Settings = settings.NewCache(settingsStore, 5*time.Second)
 
+	if err := b.seedSettings(time.Now().Unix()); err != nil {
+		log.Panic(err)
+	}
+
 	token, err := readToken(b.BotConfig.TgTokenFile)
 	if err != nil {
 		log.Panic(err)
