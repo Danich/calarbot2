@@ -123,7 +123,7 @@ func TestSystemPromptCarriesPersonaAndLore(t *testing.T) {
 	})
 	defer m.cancelRefresh()
 
-	_, system := m.systemPromptFor(100)
+	_, system := m.systemPromptFor(100, "mamkin")
 	if !strings.Contains(system, "ты Мамкин") {
 		t.Error("canon missing from the system prompt")
 	}
@@ -136,7 +136,7 @@ func TestSystemPromptFallsBackWithoutStore(t *testing.T) {
 	m := NewModule(1, AIConfig{SystemPrompt: "ты Мамкин"})
 	defer m.cancelRefresh()
 
-	if _, system := m.systemPromptFor(100); system != "ты Мамкин" {
+	if _, system := m.systemPromptFor(100, m.config.DefaultPersona); system != "ты Мамкин" {
 		t.Errorf("system = %q, want the config prompt verbatim", system)
 	}
 }
@@ -157,7 +157,7 @@ func TestSystemPromptFallsBackWhenResolvePersonaFails(t *testing.T) {
 		t.Fatalf("store.Close: %v", err)
 	}
 
-	p, system := m.systemPromptFor(100)
+	p, system := m.systemPromptFor(100, "mamkin")
 	if system != "ты Мамкин" {
 		t.Errorf("system = %q, want the config prompt verbatim on ResolvePersona failure", system)
 	}
@@ -193,7 +193,7 @@ func TestSystemPromptKeepsCanonWhenLoreQueryFails(t *testing.T) {
 		t.Fatalf("raw.Close: %v", err)
 	}
 
-	p, system := m.systemPromptFor(100)
+	p, system := m.systemPromptFor(100, "mamkin")
 	if p.Key != "mamkin" {
 		t.Fatalf("persona = %+v, want the resolved persona kept despite lore failure", p)
 	}
