@@ -64,43 +64,61 @@ func TestModuleIsCalledMentionBot(t *testing.T) {
 	}
 }
 
-func TestModuleIsCalledDirectReplyAlwaysTrue(t *testing.T) {
-	// Direct reply to bot is always true regardless of AnswerLevel
-	m := NewModule(0, AIConfig{
-		BotUsername: "testbot",
-		AnswerLevel: DiceSize + 999,
-		ReplyWeight: 0,
-	})
-	msg := &tgbotapi.Message{
-		Text: "reply",
-		Chat: &tgbotapi.Chat{ID: 1},
-		From: &tgbotapi.User{ID: 1},
-		ReplyToMessage: &tgbotapi.Message{
-			From: &tgbotapi.User{UserName: "testbot"},
-		},
-	}
-	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
-		t.Error("IsCalled with direct reply to bot should always return true")
-	}
-}
+// Раньше здесь стояли TestModuleIsCalledDirectReplyAlwaysTrue и
+// TestModuleIsCalledDirectMentionAlwaysTrue: они утверждали, что прямое
+// обращение отвечает всегда, независимо от AnswerLevel. Правило снято
+// намеренно — из-за него reply_weight и call_weight были мёртвым кодом, и
+// панель показывала две крутилки, которые ни на что не влияли.
+//
+// Обращение теперь прибавляет свой вес к броску. Гарантия ответа не потеряна,
+// а стала настраиваемой, и это ровно то, что проверяется ниже.
 
-func TestModuleIsCalledDirectMentionAlwaysTrue(t *testing.T) {
-	// Direct @mention is always true regardless of AnswerLevel
-	m := NewModule(0, AIConfig{
+func TestModuleIsCalledDirectAddressObeysItsWeight(t *testing.T) {
+	reply := func() *tgbotapi.Message {
+		return &tgbotapi.Message{
+			Text:           "reply",
+			Chat:           &tgbotapi.Chat{ID: 1},
+			From:           &tgbotapi.User{ID: 1},
+			ReplyToMessage: &tgbotapi.Message{From: &tgbotapi.User{UserName: "testbot"}},
+		}
+	}
+	mention := func() *tgbotapi.Message {
+		return &tgbotapi.Message{
+			Text:     "Hello @testbot",
+			Chat:     &tgbotapi.Chat{ID: 1},
+			From:     &tgbotapi.User{ID: 1},
+			Entities: []tgbotapi.MessageEntity{{Type: "mention", Offset: 6, Length: 8}},
+		}
+	}
+
+	// Порог недостижим, вес нулевой — бот молчит на любом броске.
+	silent := NewModule(0, AIConfig{
 		BotUsername: "testbot",
-		AnswerLevel: DiceSize + 999,
+		AnswerLevel: DiceSize + 1,
+		ReplyWeight: 0,
 		CallWeight:  0,
 	})
-	msg := &tgbotapi.Message{
-		Text: "Hello @testbot",
-		Chat: &tgbotapi.Chat{ID: 1},
-		From: &tgbotapi.User{ID: 1},
-		Entities: []tgbotapi.MessageEntity{
-			{Type: "mention", Offset: 6, Length: 8},
-		},
+	if silent.IsCalled(&botModules.Payload{Msg: reply()}) {
+		t.Error("реплай ответил при нулевом весе — ранний выход не убран")
 	}
-	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
-		t.Error("IsCalled with @mention should always return true (direct address)")
+	if silent.IsCalled(&botModules.Payload{Msg: mention()}) {
+		t.Error("упоминание ответило при нулевом весе — ранний выход не убран")
+	}
+
+	// Вес не меньше порога — отвечает всегда, потому что минимальный бросок нулевой.
+	always := NewModule(0, AIConfig{
+		BotUsername: "testbot",
+		AnswerLevel: DiceSize,
+		ReplyWeight: DiceSize,
+		CallWeight:  DiceSize,
+	})
+	for i := 0; i < 100; i++ {
+		if !always.IsCalled(&botModules.Payload{Msg: reply()}) {
+			t.Fatalf("реплай промолчал на броске %d при весе >= порога", i)
+		}
+		if !always.IsCalled(&botModules.Payload{Msg: mention()}) {
+			t.Fatalf("упоминание промолчало на броске %d при весе >= порога", i)
+		}
 	}
 }
 
