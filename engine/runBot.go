@@ -124,6 +124,16 @@ func (b *Bot) recordChat(chat *tgbotapi.Chat, ts int64) {
 	if title == "" {
 		title = strings.TrimSpace(chat.FirstName + " " + chat.LastName)
 	}
+	// Ни имени, ни фамилии — бывает у удалённых аккаунтов. Тогда хотя бы
+	// @username, а на самый крайний случай — id, лишь бы строка в списке
+	// личек в панели не оказалась пустой.
+	if title == "" {
+		if chat.UserName != "" {
+			title = "@" + chat.UserName
+		} else {
+			title = fmt.Sprintf("%d", chat.ID)
+		}
+	}
 
 	if err := b.SettingsStore.UpsertChat(settings.Chat{
 		ID:        chat.ID,
@@ -147,8 +157,15 @@ func (b *Bot) recordMembership(u *tgbotapi.ChatMemberUpdated) {
 
 	b.recordChat(&u.Chat, int64(u.Date))
 
-	switch u.NewChatMember.Status {
-	case "left", "kicked":
+	// "restricted" сам по себе не значит "бота выгнали" — админ мог просто
+	// урезать бота в правах, оставив его в чате. Различает это IsMember:
+	// false — бот действительно снаружи (и leaveChat в панели на таком чате
+	// иначе просто падал бы с ошибкой), true — бот на месте, только притих.
+	gone := u.NewChatMember.Status == "left" ||
+		u.NewChatMember.Status == "kicked" ||
+		(u.NewChatMember.Status == "restricted" && !u.NewChatMember.IsMember)
+
+	if gone {
 		if err := b.SettingsStore.MarkLeft(u.Chat.ID, int64(u.Date)); err != nil {
 			log.Printf("settings.MarkLeft: %v", err)
 		}

@@ -94,3 +94,66 @@ func TestRecordMembershipAddsNewChat(t *testing.T) {
 		t.Fatalf("ListChats = %+v; want the new chat -7", chats)
 	}
 }
+
+// Ограничили и заодно исключили из чата — это тоже "бота там больше нет",
+// иначе панель держит его в списке навечно, а её кнопка "выйти" на таком
+// чате падает: leaveChat не работает там, где бота уже нет.
+func TestRecordMembershipMarksRestrictedNonMemberChatLeft(t *testing.T) {
+	b := botWithSettings(t)
+	b.recordChat(&tgbotapi.Chat{ID: -1, Type: "group", Title: "турки"}, 1000)
+
+	b.recordMembership(&tgbotapi.ChatMemberUpdated{
+		Chat:          tgbotapi.Chat{ID: -1, Type: "group", Title: "турки"},
+		NewChatMember: tgbotapi.ChatMember{Status: "restricted", IsMember: false},
+		Date:          2000,
+	})
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	if len(chats) != 0 {
+		t.Fatalf("ListChats returned %+v; want none — бота там больше нет", chats)
+	}
+}
+
+// Ограничили, но бот всё ещё в чате — просто притих. Он должен остаться в
+// панели: leaveChat на нём сработает как обычно.
+func TestRecordMembershipKeepsRestrictedMemberChatListed(t *testing.T) {
+	b := botWithSettings(t)
+	b.recordChat(&tgbotapi.Chat{ID: -1, Type: "group", Title: "турки"}, 1000)
+
+	b.recordMembership(&tgbotapi.ChatMemberUpdated{
+		Chat:          tgbotapi.Chat{ID: -1, Type: "group", Title: "турки"},
+		NewChatMember: tgbotapi.ChatMember{Status: "restricted", IsMember: true},
+		Date:          2000,
+	})
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	if len(chats) != 1 {
+		t.Fatalf("ListChats returned %+v; want the chat still listed — бот там остался", chats)
+	}
+}
+
+// Ни имени, ни фамилии, ни username — бывает у удалённых аккаунтов. Без
+// запасного варианта title остался бы пустым, и строка в списке личек в
+// панели была бы неотличима от других пустых строк.
+func TestRecordChatNamesNamelessPrivateChatByID(t *testing.T) {
+	b := botWithSettings(t)
+
+	b.recordChat(&tgbotapi.Chat{ID: 99, Type: "private"}, 1000)
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	if len(chats) != 1 {
+		t.Fatalf("ListChats returned %d; want 1", len(chats))
+	}
+	if chats[0].Title == "" {
+		t.Errorf("chat = %+v; want a non-empty title", chats[0])
+	}
+}
