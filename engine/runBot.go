@@ -70,6 +70,11 @@ func (b *Bot) InitBot(config *CalarbotConfig) {
 
 	b.BotAPI.Debug = true
 
+	// После посева, который и создаёт строки без названия, и обязательно
+	// после BotAPI: раньше вызов стоял выше и получал nil-указатель, а
+	// типизированный nil в интерфейсе не равен nil — упало бы в getChat.
+	b.backfillChatTitles(b.BotAPI)
+
 	b.InitModules()
 
 	log.Printf("Authorized on account %s", b.BotAPI.Self.UserName)
@@ -118,31 +123,79 @@ func sortModules(moduleOrders []moduleOrder) []moduleOrder {
 
 // recordChat запоминает чат, из которого пришёл апдейт. Списка своих чатов
 // телеграм боту не отдаёт, так что панели брать его больше неоткуда.
+// chatTitle собирает, как чат называть в панели.
+//
+// У лички нет title: там имя человека и его @username. Ни имени, ни фамилии —
+// бывает у удалённых аккаунтов; тогда хотя бы @username, а на самый крайний
+// случай id, лишь бы строка в списке не оказалась пустой.
+func chatTitle(chat *tgbotapi.Chat) string {
+	if chat.Title != "" {
+		return chat.Title
+	}
+	if name := strings.TrimSpace(chat.FirstName + " " + chat.LastName); name != "" {
+		return name
+	}
+	if chat.UserName != "" {
+		return "@" + chat.UserName
+	}
+	return fmt.Sprintf("%d", chat.ID)
+}
+
+// chatInfoGetter — та часть телеграма, которой пользуется бэкфилл названий.
+// Интерфейсом, чтобы тест обходился без сети.
+type chatInfoGetter interface {
+	GetChat(tgbotapi.ChatInfoConfig) (tgbotapi.Chat, error)
+}
+
+// backfillChatTitles дозапрашивает названия у чатов, попавших в базу без него.
+//
+// Такие берутся из посева: он знает id, но не имя. Само по себе название
+// подтянется только когда в чате кто-то напишет, а в тихом чате заглушка
+// «без названия» провисит сколько угодно.
+//
+// Ошибка на одном чате не должна ронять старт: бота могли выгнать, и тогда
+// getChat отвечает отказом — это не повод не запускать бота.
+func (b *Bot) backfillChatTitles(api chatInfoGetter) {
+	if b.SettingsStore == nil {
+		return
+	}
+
+	chats, err := b.SettingsStore.ListChats()
+	if err != nil {
+		log.Printf("backfill titles, list chats: %v", err)
+		return
+	}
+
+	for _, c := range chats {
+		if c.Title != "" {
+			continue
+		}
+		info, err := api.GetChat(tgbotapi.ChatInfoConfig{
+			ChatConfig: tgbotapi.ChatConfig{ChatID: c.ID},
+		})
+		if err != nil {
+			log.Printf("backfill title for chat %d: %v", c.ID, err)
+			continue
+		}
+		if err := b.SettingsStore.UpdateChatInfo(
+			c.ID, info.Type, chatTitle(&info), info.UserName,
+		); err != nil {
+			log.Printf("backfill title for chat %d: %v", c.ID, err)
+			continue
+		}
+		log.Printf("named chat %d: %s", c.ID, chatTitle(&info))
+	}
+}
+
 func (b *Bot) recordChat(chat *tgbotapi.Chat, ts int64) {
 	if b.SettingsStore == nil || chat == nil {
 		return
 	}
 
-	// У лички нет title: там имя человека и его @username.
-	title := chat.Title
-	if title == "" {
-		title = strings.TrimSpace(chat.FirstName + " " + chat.LastName)
-	}
-	// Ни имени, ни фамилии — бывает у удалённых аккаунтов. Тогда хотя бы
-	// @username, а на самый крайний случай — id, лишь бы строка в списке
-	// личек в панели не оказалась пустой.
-	if title == "" {
-		if chat.UserName != "" {
-			title = "@" + chat.UserName
-		} else {
-			title = fmt.Sprintf("%d", chat.ID)
-		}
-	}
-
 	if err := b.SettingsStore.UpsertChat(settings.Chat{
 		ID:        chat.ID,
 		Type:      chat.Type,
-		Title:     title,
+		Title:     chatTitle(chat),
 		Username:  chat.UserName,
 		FirstSeen: ts,
 		LastSeen:  ts,

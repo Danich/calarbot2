@@ -58,3 +58,16 @@ func (s *Store) MarkLeft(chatID, ts int64) error {
 	_, err := s.db.Exec(`UPDATE chats SET left_at = ? WHERE id = ?`, ts, chatID)
 	return err
 }
+
+// UpdateChatInfo правит описание чата, не трогая first_seen и last_seen.
+//
+// Отдельный метод, а не UpsertChat: тот двигает last_seen, и бэкфилл названий
+// выдал бы себя за активность — чат всплыл бы наверх списка и соврал бы в
+// колонке «последняя активность» в панели.
+func (s *Store) UpdateChatInfo(chatID int64, chatType, title, username string) error {
+	_, err := s.db.Exec(
+		`UPDATE chats SET type = ?, title = ?, username = ? WHERE id = ?`,
+		chatType, title, username, chatID,
+	)
+	return err
+}
