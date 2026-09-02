@@ -74,9 +74,19 @@ type Module struct {
 	bot     *tgbotapi.BotAPI
 }
 
-func (m *Module) Order() int { return m.order }
+func (m *Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "Сказка",
+		Description: "Играет с чатом в сочинение сказки",
+	}
+}
 
-func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
+func (m *Module) IsCalled(payload *botModules.Payload) bool {
+	msg := payload.Msg
+	if msg == nil {
+		return false
+	}
 	if msg.IsCommand() {
 		cmd := msg.Command()
 		return cmd == "skazka" || cmd == "play"

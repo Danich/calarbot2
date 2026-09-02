@@ -3,11 +3,16 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/botModules"
+	"calarbot2/settings"
 )
 
 // MockBotAPI is a mock implementation of the Telegram Bot API for testing
@@ -24,21 +29,33 @@ func (m *MockBotAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
 }
 
 func TestInitModules(t *testing.T) {
+	// Регистрируем модули по-настоящему, с разными Order: если оба модуля
+	// недоступны, Register() отдаёт им один и тот же fallback Order 9999, и
+	// sort.Slice (не стабильная сортировка) вперемешку с рандомизированным
+	// порядком обхода карты модулей решает их порядок произвольно —
+	// проверка ниже была бы недетерминированной.
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(botModules.Registration{Order: 10, Label: "module1"})
+	}))
+	defer server1.Close()
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(botModules.Registration{Order: 20, Label: "module2"})
+	}))
+	defer server2.Close()
+
 	// Create real ModuleClient instances for the bot
-	moduleClient1 := &botModules.ModuleClient{BaseURL: "http://localhost:8080"}
-	moduleClient2 := &botModules.ModuleClient{BaseURL: "http://localhost:8081"}
+	moduleClient1 := &botModules.ModuleClient{BaseURL: server1.URL}
+	moduleClient2 := &botModules.ModuleClient{BaseURL: server2.URL}
 
 	// Create a bot with a mock configuration
 	bot := &Bot{
 		BotConfig: &CalarbotConfig{
 			Modules: map[string]ModulesConfig{
 				"module1": {
-					Url:       "http://localhost:8080",
-					EnabledOn: []int64{123456789},
+					Url: server1.URL,
 				},
 				"module2": {
-					Url:       "http://localhost:8081",
-					EnabledOn: []int64{987654321},
+					Url: server2.URL,
 				},
 			},
 		},
@@ -67,113 +84,59 @@ func TestInitModules(t *testing.T) {
 	}
 }
 
-func TestShouldIAnswer(t *testing.T) {
-	tests := []struct {
-		name           string
-		moduleName     string
-		chatID         int64
-		enabledOn      []int64
-		isCalledResult bool
-		isCalledError  error
-		expected       bool
-	}{
-		{
-			name:           "module enabled and called",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      []int64{123456789},
-			isCalledResult: true,
-			isCalledError:  nil,
-			expected:       true,
-		},
-		{
-			name:           "module enabled but not called",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      []int64{123456789},
-			isCalledResult: false,
-			isCalledError:  nil,
-			expected:       false,
-		},
-		{
-			name:           "module not enabled",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      []int64{987654321},
-			isCalledResult: true,
-			isCalledError:  nil,
-			expected:       false,
-		},
-		{
-			name:           "module enabled for all chats",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      nil,
-			isCalledResult: true,
-			isCalledError:  nil,
-			expected:       true,
-		},
-		{
-			name:           "error checking if called",
-			moduleName:     "module1",
-			chatID:         123456789,
-			enabledOn:      []int64{123456789},
-			isCalledResult: false,
-			isCalledError:  &tgbotapi.Error{},
-			expected:       false,
-		},
+func TestShouldIAnswerSkipsDisabledModule(t *testing.T) {
+	b := botWithSettings(t)
+	b.Settings = settings.NewCache(b.SettingsStore, time.Minute)
+	b.BotConfig = &CalarbotConfig{Modules: map[string]ModulesConfig{"aiAnswer": {Url: "x"}}}
+
+	client := NewMockModuleClient()
+	client.IsCalledResult = true
+	update := tgbotapi.Update{Message: &tgbotapi.Message{Chat: &tgbotapi.Chat{ID: -1}}}
+	payload := &botModules.Payload{Msg: update.Message, Extra: map[string]interface{}{}}
+
+	if b.shouldIAnswer("aiAnswer", update, client, payload) {
+		t.Error("shouldIAnswer = true for a module with no row; want false")
+	}
+}
+
+func TestShouldIAnswerAsksEnabledModule(t *testing.T) {
+	b := botWithSettings(t)
+	b.Settings = settings.NewCache(b.SettingsStore, time.Minute)
+	b.BotConfig = &CalarbotConfig{Modules: map[string]ModulesConfig{"aiAnswer": {Url: "x"}}}
+	if err := b.SettingsStore.SetModuleEnabled(-1, "aiAnswer", true); err != nil {
+		t.Fatalf("SetModuleEnabled: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a bot with a mock configuration
-			bot := &Bot{
-				BotConfig: &CalarbotConfig{
-					Modules: map[string]ModulesConfig{
-						tt.moduleName: {
-							Url:       "http://localhost:8080",
-							EnabledOn: tt.enabledOn,
-						},
-					},
-				},
-			}
+	client := NewMockModuleClient()
+	client.IsCalledResult = true
+	update := tgbotapi.Update{Message: &tgbotapi.Message{Chat: &tgbotapi.Chat{ID: -1}}}
+	payload := &botModules.Payload{Msg: update.Message, Extra: map[string]interface{}{}}
 
-			// Create a mock module client
-			mockClient := NewMockModuleClient()
-			mockClient.IsCalledResult = tt.isCalledResult
-			mockClient.IsCalledError = tt.isCalledError
+	if !b.shouldIAnswer("aiAnswer", update, client, payload) {
+		t.Error("shouldIAnswer = false for an enabled module; want true")
+	}
+}
 
-			// Create a test update
-			update := tgbotapi.Update{
-				Message: &tgbotapi.Message{
-					Chat: &tgbotapi.Chat{
-						ID: tt.chatID,
-					},
-				},
-			}
+func TestSettingsForOverlaysStoredValuesOnDefaults(t *testing.T) {
+	b := botWithSettings(t)
+	b.Settings = settings.NewCache(b.SettingsStore, time.Minute)
+	b.Registrations = map[string]botModules.Registration{
+		"aiAnswer": {Fields: []botModules.Field{
+			{Key: "answer_level", Type: botModules.FieldNumber, Default: 990},
+			{Key: "context_size", Type: botModules.FieldNumber, Default: 10},
+		}},
+	}
+	if err := b.SettingsStore.SetValue(-1, "aiAnswer", "context_size", "25"); err != nil {
+		t.Fatalf("SetValue: %v", err)
+	}
 
-			// Create a test payload
-			payload := &botModules.Payload{
-				Msg: update.Message,
-			}
+	got := b.settingsFor(-1, "aiAnswer")
 
-			// Call shouldIAnswer with our mock client
-			result := bot.shouldIAnswer(tt.moduleName, update, mockClient, payload)
-
-			// Verify the result
-			if result != tt.expected {
-				t.Errorf("shouldIAnswer() = %v, want %v", result, tt.expected)
-			}
-
-			// Verify that IsCalled was called with the correct payload
-			if tt.enabledOn == nil || (tt.chatID != 0 && contains(tt.enabledOn, tt.chatID)) {
-				if mockClient.IsCalledPayload == nil {
-					t.Errorf("IsCalled was not called")
-				} else if mockClient.IsCalledPayload.Msg != update.Message {
-					t.Errorf("IsCalled was called with wrong message")
-				}
-			}
-		})
+	if got["answer_level"] != 990 {
+		t.Errorf("answer_level = %v; want the default 990", got["answer_level"])
+	}
+	if got["context_size"] != 25 {
+		t.Errorf("context_size = %v; want the stored 25", got["context_size"])
 	}
 }
 
@@ -263,13 +226,4 @@ func TestSortModules(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(slice []int64, value int64) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
 }

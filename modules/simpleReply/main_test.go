@@ -11,8 +11,8 @@ import (
 
 func TestModuleOrder(t *testing.T) {
 	module := Module{order: 42}
-	if module.Order() != 42 {
-		t.Errorf("Expected order to be 42, got %d", module.Order())
+	if module.Register().Order != 42 {
+		t.Errorf("Expected order to be 42, got %d", module.Register().Order)
 	}
 }
 
@@ -28,7 +28,7 @@ func TestModuleIsCalled(t *testing.T) {
 	msg := &tgbotapi.Message{
 		Text: "Hello",
 	}
-	if !module.IsCalled(msg) {
+	if !module.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Errorf("Expected IsCalled(msg) to return true")
 	}
 }

@@ -168,13 +168,13 @@ func personaChangeText(c store.PersonaChange) string {
 
 // systemPromptFor собирает системное сообщение под конкретный чат: канон
 // персоны плюс её лор. Без стора работает как раньше — на промпте из конфига.
-func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
+func (m *Module) systemPromptFor(chatID int64, personaKey string) (store.Persona, string) {
 	if m.store == nil {
 		return store.Persona{}, m.config.SystemPrompt
 	}
-	p, err := m.store.ResolvePersona(chatID, m.config.DefaultPersona)
+	p, err := m.store.PersonaByKey(personaKey)
 	if err != nil {
-		log.Printf("resolve persona: %v", err)
+		log.Printf("persona %q: %v", personaKey, err)
 		return store.Persona{}, m.config.SystemPrompt
 	}
 	records, err := m.store.LoreForPrompt(chatID, p.ID, m.config.LoreWindow)
@@ -189,12 +189,67 @@ func (m *Module) systemPromptFor(chatID int64) (store.Persona, string) {
 	return p, p.SystemPrompt + "\n\n" + block
 }
 
-func (m *Module) Order() int { return m.order }
+func intPtr(v int) *int { return &v }
 
-func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
+// Register описывает форму настроек для админки и отдаёт свои конфигурационные
+// значения как дефолты: канал, которого никто не трогал, ведёт себя ровно так,
+// как настроен бот в целом.
+func (m *Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "AI-ответ",
+		Description: "Отвечает через языковую модель",
+		Fields: []botModules.Field{
+			{
+				Key: "persona", Label: "Персона", Type: botModules.FieldSelect,
+				Options: m.personaOptions(), Default: m.config.DefaultPersona,
+			},
+			{
+				Key: "answer_level", Label: "Вес: обычный триггер", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.AnswerLevel,
+			},
+			{
+				Key: "call_weight", Label: "Вес: по обращению", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.CallWeight,
+			},
+			{
+				Key: "reply_weight", Label: "Вес: по реплаю", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(1000), Default: m.config.ReplyWeight,
+			},
+			{
+				Key: "context_size", Label: "Окно контекста (сообщений)", Type: botModules.FieldNumber,
+				Min: intPtr(0), Max: intPtr(200), Default: m.config.ContextSize,
+			},
+		},
+	}
+}
+
+// personaOptions считается на каждый вызов: персоны живут в базе и заводятся
+// без перезапуска, поэтому зашить их список было бы неверно.
+func (m *Module) personaOptions() []botModules.Option {
+	if m.store == nil {
+		return nil
+	}
+	personas, err := m.store.ListPersonas()
+	if err != nil {
+		log.Printf("list personas: %v", err)
+		return nil
+	}
+	opts := make([]botModules.Option, 0, len(personas))
+	for _, p := range personas {
+		opts = append(opts, botModules.Option{Value: p.Key, Label: p.Name})
+	}
+	return opts
+}
+
+func (m *Module) IsCalled(payload *botModules.Payload) bool {
+	msg := payload.Msg
 	if msg == nil {
 		return false
 	}
+	s := settingsOf(payload)
+	personaKey := stringSetting(s, "persona", m.config.DefaultPersona)
+
 	if m.store != nil {
 		if err := m.store.SaveMessage(msg); err != nil {
 			log.Printf("store.SaveMessage: %v", err)
@@ -203,7 +258,7 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	// Лор растёт на каждом сообщении чата, а не только когда бот отвечает:
 	// IsCalled видит весь поток, и никакого расписания для этого не нужно.
 	if m.store != nil && m.loreRunner != nil && msg.Chat != nil {
-		if p, err := m.store.ResolvePersona(msg.Chat.ID, m.config.DefaultPersona); err == nil {
+		if p, err := m.store.PersonaByKey(personaKey); err == nil {
 			m.loreRunner.Maybe(msg.Chat.ID, p.ID, p.SystemPrompt)
 		}
 	}
@@ -213,12 +268,12 @@ func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
 	roll := rand.Intn(DiceSize + 1)
 	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
 		msg.ReplyToMessage.From.UserName == m.config.BotUsername {
-		roll += m.config.ReplyWeight
+		roll += intSetting(s, "reply_weight", m.config.ReplyWeight)
 	}
 	if common.Contains(common.ExtractMentions(msg), "@"+m.config.BotUsername) {
-		roll += m.config.CallWeight
+		roll += intSetting(s, "call_weight", m.config.CallWeight)
 	}
-	return roll >= m.config.AnswerLevel
+	return roll >= intSetting(s, "answer_level", m.config.AnswerLevel)
 }
 
 // Answer отвечает и запоминает собственный ответ: без этого в контексте видны
@@ -247,17 +302,19 @@ func (m *Module) answer(payload *botModules.Payload) (botModules.RichAnswer, err
 		return botModules.RichAnswer{}, nil
 	}
 
+	s := settingsOf(payload)
+
 	var history []store.ContextMessage
 	if m.store != nil {
 		var err error
-		history, err = m.store.GetContext(msg.Chat.ID, m.config.ContextSize)
+		history, err = m.store.GetContext(msg.Chat.ID, intSetting(s, "context_size", m.config.ContextSize))
 		if err != nil {
 			log.Printf("store.GetContext: %v", err)
 		}
 	}
 
 	photoURL, _ := payload.Extra["photo_url"].(string)
-	_, system := m.systemPromptFor(msg.Chat.ID)
+	_, system := m.systemPromptFor(msg.Chat.ID, stringSetting(s, "persona", m.config.DefaultPersona))
 
 	if isDirectAddress(msg, m.config.BotUsername) {
 		route, err := m.router.Route(ctx, msg)

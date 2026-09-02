@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
 
 	"calarbot2/modules/aiAnswer/store"
@@ -49,38 +50,50 @@ func TestUpsertConfigPersonaFlagsOverwrittenPrompt(t *testing.T) {
 	}
 }
 
-func TestResolvePersonaFallsBackToDefault(t *testing.T) {
+func TestPersonaByKey(t *testing.T) {
 	s := newTestStore(t)
-	seeded, _, _ := s.UpsertConfigPersona("mamkin", "mamkin", "you are Mamkin")
-	got, err := s.ResolvePersona(100, "mamkin")
+	mamkin, _, err := s.UpsertConfigPersona("mamkin", "Мамкин", "ты финансист")
 	if err != nil {
-		t.Fatalf("ResolvePersona: %v", err)
+		t.Fatalf("UpsertConfigPersona: %v", err)
 	}
-	if got.ID != seeded.ID {
-		t.Errorf("id = %d, want %d", got.ID, seeded.ID)
+
+	got, err := s.PersonaByKey("mamkin")
+	if err != nil {
+		t.Fatalf("PersonaByKey: %v", err)
+	}
+	if got.ID != mamkin.ID || got.SystemPrompt != "ты финансист" {
+		t.Errorf("PersonaByKey = %+v; want %+v", got, mamkin)
 	}
 }
 
-func TestChatPersonaOverridesDefault(t *testing.T) {
+func TestPersonaByKeyReportsMissing(t *testing.T) {
 	s := newTestStore(t)
-	s.UpsertConfigPersona("mamkin", "mamkin", "you are Mamkin")
-	genadiy, _, _ := s.UpsertConfigPersona("genadiy", "genadiy", "you are a pigeon")
-	if err := s.SetChatPersona(100, genadiy.ID); err != nil {
-		t.Fatalf("SetChatPersona: %v", err)
-	}
-	got, err := s.ResolvePersona(100, "mamkin")
-	if err != nil {
-		t.Fatalf("ResolvePersona: %v", err)
-	}
-	if got.Key != "genadiy" {
-		t.Errorf("key = %q, want genadiy", got.Key)
+
+	if _, err := s.PersonaByKey("nobody"); !errors.Is(err, store.ErrNoPersona) {
+		t.Fatalf("PersonaByKey error = %v; want ErrNoPersona", err)
 	}
 }
 
-func TestResolvePersonaWithoutSeed(t *testing.T) {
+// Список для выпадашки в админке. Он же причина, по которой options считает
+// модуль, а не конфиг: персоны заводятся в базе.
+func TestListPersonas(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.ResolvePersona(100, "mamkin"); err != store.ErrNoPersona {
-		t.Errorf("err = %v, want ErrNoPersona", err)
+	if _, _, err := s.UpsertConfigPersona("mamkin", "Мамкин", "a"); err != nil {
+		t.Fatalf("UpsertConfigPersona: %v", err)
+	}
+	if _, _, err := s.UpsertConfigPersona("genadiy", "Геннадий", "b"); err != nil {
+		t.Fatalf("UpsertConfigPersona: %v", err)
+	}
+
+	got, err := s.ListPersonas()
+	if err != nil {
+		t.Fatalf("ListPersonas: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListPersonas returned %d; want 2", len(got))
+	}
+	if got[0].Key != "genadiy" || got[1].Key != "mamkin" {
+		t.Errorf("ListPersonas = %+v; want them ordered by key", got)
 	}
 }
 

@@ -7,20 +7,21 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"calarbot2/botModules"
 	"calarbot2/common"
 	"calarbot2/modules/aiAnswer/store"
 )
 
 func TestModuleOrder(t *testing.T) {
 	m := NewModule(42, AIConfig{BotUsername: "testbot", AnswerLevel: 500})
-	if m.Order() != 42 {
-		t.Errorf("Order() = %d, want 42", m.Order())
+	if m.Register().Order != 42 {
+		t.Errorf("Register().Order = %d, want 42", m.Register().Order)
 	}
 }
 
 func TestModuleIsCalledNilMessage(t *testing.T) {
 	m := NewModule(0, AIConfig{BotUsername: "testbot", AnswerLevel: 500})
-	if m.IsCalled(nil) {
+	if m.IsCalled(&botModules.Payload{}) {
 		t.Error("IsCalled(nil) should return false")
 	}
 }
@@ -39,7 +40,7 @@ func TestModuleIsCalledReplyToBot(t *testing.T) {
 			From: &tgbotapi.User{UserName: "testbot"},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with reply to bot should return true")
 	}
 }
@@ -58,7 +59,7 @@ func TestModuleIsCalledMentionBot(t *testing.T) {
 			{Type: "mention", Offset: 6, Length: 8},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with mention should return true")
 	}
 }
@@ -78,7 +79,7 @@ func TestModuleIsCalledDirectReplyAlwaysTrue(t *testing.T) {
 			From: &tgbotapi.User{UserName: "testbot"},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with direct reply to bot should always return true")
 	}
 }
@@ -98,7 +99,7 @@ func TestModuleIsCalledDirectMentionAlwaysTrue(t *testing.T) {
 			{Type: "mention", Offset: 6, Length: 8},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with @mention should always return true (direct address)")
 	}
 }
@@ -122,7 +123,7 @@ func TestSystemPromptCarriesPersonaAndLore(t *testing.T) {
 	})
 	defer m.cancelRefresh()
 
-	_, system := m.systemPromptFor(100)
+	_, system := m.systemPromptFor(100, "mamkin")
 	if !strings.Contains(system, "ты Мамкин") {
 		t.Error("canon missing from the system prompt")
 	}
@@ -135,7 +136,7 @@ func TestSystemPromptFallsBackWithoutStore(t *testing.T) {
 	m := NewModule(1, AIConfig{SystemPrompt: "ты Мамкин"})
 	defer m.cancelRefresh()
 
-	if _, system := m.systemPromptFor(100); system != "ты Мамкин" {
+	if _, system := m.systemPromptFor(100, m.config.DefaultPersona); system != "ты Мамкин" {
 		t.Errorf("system = %q, want the config prompt verbatim", system)
 	}
 }
@@ -156,7 +157,7 @@ func TestSystemPromptFallsBackWhenResolvePersonaFails(t *testing.T) {
 		t.Fatalf("store.Close: %v", err)
 	}
 
-	p, system := m.systemPromptFor(100)
+	p, system := m.systemPromptFor(100, "mamkin")
 	if system != "ты Мамкин" {
 		t.Errorf("system = %q, want the config prompt verbatim on ResolvePersona failure", system)
 	}
@@ -192,12 +193,75 @@ func TestSystemPromptKeepsCanonWhenLoreQueryFails(t *testing.T) {
 		t.Fatalf("raw.Close: %v", err)
 	}
 
-	p, system := m.systemPromptFor(100)
+	p, system := m.systemPromptFor(100, "mamkin")
 	if p.Key != "mamkin" {
 		t.Fatalf("persona = %+v, want the resolved persona kept despite lore failure", p)
 	}
 	if system != "ты Мамкин" {
 		t.Errorf("system = %q, want the persona canon verbatim (no lore block) when lore lookup fails", system)
+	}
+}
+
+func TestRegisterDeclaresConfigValuesAsDefaults(t *testing.T) {
+	m := &Module{order: 100, config: AIConfig{
+		AnswerLevel: 990, CallWeight: 700, ReplyWeight: 400,
+		ContextSize: 10, DefaultPersona: "mamkin",
+	}}
+
+	reg := m.Register()
+
+	if reg.Order != 100 || reg.Label != "AI-ответ" {
+		t.Errorf("Registration = %+v; want order 100, label AI-ответ", reg)
+	}
+
+	byKey := map[string]botModules.Field{}
+	for _, f := range reg.Fields {
+		byKey[f.Key] = f
+	}
+
+	// Сегодняшняя настройка обязана стать дефолтом нового канала — это и есть
+	// весь механизм «прикопать нынешние значения», отдельного нет.
+	for key, want := range map[string]any{
+		"answer_level": 990, "call_weight": 700, "reply_weight": 400, "context_size": 10,
+	} {
+		f, ok := byKey[key]
+		if !ok {
+			t.Fatalf("Register did not declare %s", key)
+		}
+		if f.Default != want {
+			t.Errorf("%s default = %v; want %v", key, f.Default, want)
+		}
+		if f.Type != botModules.FieldNumber {
+			t.Errorf("%s type = %q; want number", key, f.Type)
+		}
+	}
+
+	if byKey["persona"].Default != "mamkin" {
+		t.Errorf("persona default = %v; want mamkin", byKey["persona"].Default)
+	}
+	if byKey["persona"].Type != botModules.FieldSelect {
+		t.Errorf("persona type = %q; want select", byKey["persona"].Type)
+	}
+}
+
+// Веса — это бросок d1000, значения вне диапазона осмысленного смысла не имеют,
+// и админка обязана узнать границы от модуля, а не угадать их.
+func TestRegisterBoundsTheWeights(t *testing.T) {
+	m := &Module{config: AIConfig{}}
+
+	for _, f := range m.Register().Fields {
+		switch f.Key {
+		case "answer_level", "call_weight", "reply_weight":
+			if f.Min == nil || *f.Min != 0 || f.Max == nil || *f.Max != 1000 {
+				t.Errorf("%s bounds = %v..%v; want 0..1000", f.Key, f.Min, f.Max)
+			}
+		case "context_size":
+			// Без верхней границы {"context_size": 1000000000} проходит валидацию
+			// и заставляет GetContext тянуть в промпт всю историю чата.
+			if f.Min == nil || *f.Min != 0 || f.Max == nil || *f.Max != 200 {
+				t.Errorf("context_size bounds = %v..%v; want 0..200", f.Min, f.Max)
+			}
+		}
 	}
 }
 

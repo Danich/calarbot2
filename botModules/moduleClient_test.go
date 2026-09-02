@@ -8,76 +8,73 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func TestModuleClientOrder(t *testing.T) {
-	tests := []struct {
-		name           string
-		serverResponse interface{}
-		serverStatus   int
-		expected       int
-	}{
-		{
-			name:           "successful response",
-			serverResponse: map[string]int{"order": 5},
-			serverStatus:   http.StatusOK,
-			expected:       5,
-		},
-		{
-			name:           "error response",
-			serverResponse: map[string]string{"error": "something went wrong"},
-			serverStatus:   http.StatusInternalServerError,
-			expected:       9999,
-		},
-		{
-			name:           "invalid response format",
-			serverResponse: "not a json",
-			serverStatus:   http.StatusOK,
-			expected:       9999,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a test server
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Check if the request path is correct
-				if r.URL.Path != "/order" {
-					t.Errorf("Expected request to '/order', got: %s", r.URL.Path)
-				}
-
-				// Check if the request method is GET
-				if r.Method != http.MethodGet {
-					t.Errorf("Expected GET request, got: %s", r.Method)
-				}
-
-				// Set response status
-				w.WriteHeader(tt.serverStatus)
-
-				// Write response
-				if resp, ok := tt.serverResponse.(string); ok {
-					_, _ = fmt.Fprint(w, resp)
-				} else {
-					_ = json.NewEncoder(w).Encode(tt.serverResponse)
-				}
-			}))
-			defer server.Close()
-
-			// Create client with test server URL
-			client := &ModuleClient{
-				BaseURL: server.URL,
-			}
-
-			// Call the method
-			result := client.Order()
-
-			// Check the result
-			if result != tt.expected {
-				t.Errorf("Order() = %d, want %d", result, tt.expected)
-			}
+func TestModuleClientRegister(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/register" {
+			t.Errorf("path = %q; want /register", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(Registration{
+			Order: 100,
+			Label: "AI-ответ",
+			Fields: []Field{{
+				Key: "answer_level", Label: "Вес", Type: FieldNumber, Default: 990,
+			}},
 		})
+	}))
+	defer srv.Close()
+
+	c := &ModuleClient{BaseURL: srv.URL}
+	reg, err := c.Register()
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if reg.Order != 100 || reg.Label != "AI-ответ" {
+		t.Errorf("Registration = %+v; want order 100, label AI-ответ", reg)
+	}
+	if len(reg.Fields) != 1 || reg.Fields[0].Key != "answer_level" {
+		t.Errorf("Fields = %+v; want one answer_level field", reg.Fields)
+	}
+}
+
+// Модуль лежит — он всё равно должен оказаться последним в очереди, а не
+// первым. Это поведение было у Order() и его нельзя потерять.
+func TestModuleClientRegisterSinksUnreachableModule(t *testing.T) {
+	c := &ModuleClient{BaseURL: "http://127.0.0.1:1"}
+
+	reg, err := c.Register()
+	if err == nil {
+		t.Error("Register on an unreachable module returned nil error")
+	}
+	if reg.Order != 9999 {
+		t.Errorf("Order = %d; want 9999", reg.Order)
+	}
+}
+
+// Зависший TCP-коннект к модулю не должен вешать Register навсегда: страницу
+// панели рендерят под общим мьютексом реестра, и одна лежачая карточка иначе
+// заблокировала бы всю панель.
+func TestModuleClientRegisterTimesOutOnHangingServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // никогда не отвечает сам — ждёт, пока не оборвёт клиент
+	}))
+	defer srv.Close()
+
+	c := &ModuleClient{BaseURL: srv.URL}
+
+	start := time.Now()
+	_, err := c.Register()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Register against a hanging server returned nil error")
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("Register took %s; want it bounded by the client timeout", elapsed)
 	}
 }
 
@@ -305,8 +302,8 @@ func TestModuleClientAnswer(t *testing.T) {
 // photoModule отвечает картинкой в байтах и ничем больше.
 type photoModule struct{ img []byte }
 
-func (m photoModule) Order() int                          { return 1 }
-func (m photoModule) IsCalled(*tgbotapi.Message) bool     { return true }
+func (m photoModule) Register() Registration              { return Registration{Order: 1} }
+func (m photoModule) IsCalled(*Payload) bool              { return true }
 func (m photoModule) Answer(*Payload) (RichAnswer, error) { return RichAnswer{Photo: m.img}, nil }
 
 // Байты картинки едут от модуля к движку через JSON, и это единственное место,

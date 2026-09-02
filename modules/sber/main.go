@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-
 	"calarbot2/botModules"
 )
 
@@ -20,11 +18,18 @@ type Module struct {
 	sberifyURL string
 }
 
-// Order returns the module's priority order
-func (m Module) Order() int { return m.order }
+// Register returns the module's registration info
+func (m Module) Register() botModules.Registration {
+	return botModules.Registration{
+		Order:       m.order,
+		Label:       "Сберификатор",
+		Description: "Приделывает «сбер» к существительным во фразе",
+	}
+}
 
 // IsCalled checks if this module should handle the message
-func (m Module) IsCalled(msg *tgbotapi.Message) bool {
+func (m Module) IsCalled(payload *botModules.Payload) bool {
+	msg := payload.Msg
 	if msg == nil || msg.Text == "" {
 		return false
 	}

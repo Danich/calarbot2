@@ -19,7 +19,10 @@ type ContextMessage struct {
 }
 
 func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	// busy_timeout живёт на соединении, а не на базе: в этот же файл теперь
+	// пишут движок и админка, и без ожидания второй писатель получит
+	// «database is locked».
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -55,11 +58,7 @@ func (s *Store) migrate() error {
 			source        TEXT NOT NULL,
 			created_at    INTEGER NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS chat_persona (
-			chat_id    INTEGER PRIMARY KEY,
-			persona_id INTEGER NOT NULL,
-			set_at     INTEGER NOT NULL
-		);
+		DROP TABLE IF EXISTS chat_persona;
 		CREATE TABLE IF NOT EXISTS lore (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			chat_id    INTEGER NOT NULL,

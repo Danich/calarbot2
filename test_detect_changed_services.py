@@ -62,3 +62,18 @@ def test_notify_is_detected():
     """Без своей ветки сервис никогда не пересобрался бы пайплайном — ровно
     так уже было с sberify-service."""
     assert detect_services(["notify/main.go"]) == {"notify"}
+
+
+def test_admin_is_its_own_service():
+    assert detect_services(["admin/page.go"]) == {"admin"}
+
+
+def test_settings_rebuilds_only_what_links_it():
+    # settings компилируется в движок и в панель. В REBUILD_EVERYTHING он
+    # намеренно не попал: пересобирать из-за него все семь сервисов на хосте
+    # с двумя гигабайтами памяти незачем.
+    assert detect_services(["settings/store.go"]) == {"engine", "admin"}
+
+
+def test_settings_does_not_rebuild_everything():
+    assert "all" not in detect_services(["settings/store.go"])

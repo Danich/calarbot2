@@ -5,13 +5,14 @@ package main
 import (
 	"testing"
 
+	"calarbot2/botModules"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func TestModuleOrder(t *testing.T) {
 	module := Module{order: 42}
-	if module.Order() != 42 {
-		t.Errorf("Expected order to be 42, got %d", module.Order())
+	if module.Register().Order != 42 {
+		t.Errorf("Expected order to be 42, got %d", module.Register().Order)
 	}
 }
 
@@ -57,7 +58,7 @@ func TestModuleIsCalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := module.IsCalled(tt.message)
+			result := module.IsCalled(&botModules.Payload{Msg: tt.message})
 			if result != tt.expected {
 				t.Errorf("IsCalled() = %v, want %v", result, tt.expected)
 			}

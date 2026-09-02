@@ -54,6 +54,12 @@ The `/skazka` command implements a collaborative storytelling game where multipl
 - Stories can be automatically posted to a configured channel
 - The game has configurable timeouts for registration and turns
 
+## Web admin
+
+A separate `admin` service serves a web panel: every chat the bot is in, which
+modules are on in each, and each module's per-chat settings. It is published on
+the tailnet only. Modules default to **off** in a chat until switched on.
+
 ## Setup
 
 ### Prerequisites
@@ -87,10 +93,16 @@ docker-compose down
 ### Adding a new module
 
 1. Create a new directory in the `modules` directory
-2. Implement the BotModule interface
-3. Add a build stage to the Dockerfile
-4. Add a service to docker-compose.yml
-5. Add your module to the `includeModules` map in `engine/runBot.go` (for local development)
+2. Implement the `BotModule` interface: `Register()`, `IsCalled(*Payload)`, `Answer(*Payload)`
+3. Return your settings form from `Register()` — the panel renders it and stores
+   the values, and the engine hands them back in `Payload.Extra["settings"]` on
+   every call. A module stores nothing itself.
+4. Add a build stage to the Dockerfile
+5. Add a service to docker-compose.yml
+6. Add your module's url to the `modules` map in `calarbot.yaml`
+
+A module with no settings simply returns no `Fields` and gets a bare on/off
+toggle in the panel.
 
 See the existing modules for examples.
 

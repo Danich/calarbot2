@@ -6,11 +6,12 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"calarbot2/botModules"
-	"calarbot2/common"
+	"calarbot2/settings"
 )
 
 // Ensure mock_module_client.go is included in the build
@@ -20,6 +21,9 @@ type Bot struct {
 	BotAPI         *tgbotapi.BotAPI
 	Flags          map[string]bool
 	Modules        map[string]*botModules.ModuleClient
+	Registrations  map[string]botModules.Registration
+	SettingsStore  *settings.Store
+	Settings       *settings.Cache
 	BotConfig      *CalarbotConfig
 	orderedModules []string
 }
@@ -37,6 +41,22 @@ func readToken(filename string) (string, error) {
 
 func (b *Bot) InitBot(config *CalarbotConfig) {
 	b.BotConfig = config
+
+	// Паникуем, а не работаем без базы: без неё каждый модуль выключен, и бот
+	// молча онемел бы во всех чатах сразу.
+	if b.BotConfig.SQLitePath == "" {
+		log.Panic("sqlitePath is empty: the engine cannot resolve module settings without it")
+	}
+	settingsStore, err := settings.New(b.BotConfig.SQLitePath)
+	if err != nil {
+		log.Panic(err)
+	}
+	b.SettingsStore = settingsStore
+	b.Settings = settings.NewCache(settingsStore, 5*time.Second)
+
+	if err := b.seedSettings(time.Now().Unix()); err != nil {
+		log.Panic(err)
+	}
 
 	token, err := readToken(b.BotConfig.TgTokenFile)
 	if err != nil {
@@ -62,13 +82,15 @@ func (b *Bot) InitModules() {
 	if b.Modules == nil {
 		b.Modules = make(map[string]*botModules.ModuleClient)
 	}
+	b.Registrations = make(map[string]botModules.Registration)
 	for configName, moduleConfig := range b.BotConfig.Modules {
 		b.Modules[configName] = &botModules.ModuleClient{BaseURL: moduleConfig.Url}
-		moduleOrders = append(moduleOrders, moduleOrder{
-			name:  configName,
-			order: b.Modules[configName].Order(),
-		})
-
+		reg, err := b.Modules[configName].Register()
+		if err != nil {
+			log.Printf("module %s did not register: %v", configName, err)
+		}
+		b.Registrations[configName] = reg
+		moduleOrders = append(moduleOrders, moduleOrder{name: configName, order: reg.Order})
 	}
 
 	moduleOrders = sortModules(moduleOrders)
@@ -82,7 +104,7 @@ func (b *Bot) InitModules() {
 	fmt.Println("Initialized modules:")
 	for _, moduleName := range b.orderedModules {
 		client := b.Modules[moduleName]
-		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, client.Order())
+		fmt.Printf("\t%s: %s (%d)\n", moduleName, client.BaseURL, b.Registrations[moduleName].Order)
 	}
 }
 
@@ -94,6 +116,66 @@ func sortModules(moduleOrders []moduleOrder) []moduleOrder {
 	return moduleOrders
 }
 
+// recordChat запоминает чат, из которого пришёл апдейт. Списка своих чатов
+// телеграм боту не отдаёт, так что панели брать его больше неоткуда.
+func (b *Bot) recordChat(chat *tgbotapi.Chat, ts int64) {
+	if b.SettingsStore == nil || chat == nil {
+		return
+	}
+
+	// У лички нет title: там имя человека и его @username.
+	title := chat.Title
+	if title == "" {
+		title = strings.TrimSpace(chat.FirstName + " " + chat.LastName)
+	}
+	// Ни имени, ни фамилии — бывает у удалённых аккаунтов. Тогда хотя бы
+	// @username, а на самый крайний случай — id, лишь бы строка в списке
+	// личек в панели не оказалась пустой.
+	if title == "" {
+		if chat.UserName != "" {
+			title = "@" + chat.UserName
+		} else {
+			title = fmt.Sprintf("%d", chat.ID)
+		}
+	}
+
+	if err := b.SettingsStore.UpsertChat(settings.Chat{
+		ID:        chat.ID,
+		Type:      chat.Type,
+		Title:     title,
+		Username:  chat.UserName,
+		FirstSeen: ts,
+		LastSeen:  ts,
+	}); err != nil {
+		log.Printf("settings.UpsertChat: %v", err)
+	}
+}
+
+// recordMembership ловит добавление и изгнание бота. Телеграм шлёт эти апдейты
+// по умолчанию, и без них канал появлялся бы в панели только тогда, когда в нём
+// кто-то напишет.
+func (b *Bot) recordMembership(u *tgbotapi.ChatMemberUpdated) {
+	if b.SettingsStore == nil || u == nil {
+		return
+	}
+
+	b.recordChat(&u.Chat, int64(u.Date))
+
+	// "restricted" сам по себе не значит "бота выгнали" — админ мог просто
+	// урезать бота в правах, оставив его в чате. Различает это IsMember:
+	// false — бот действительно снаружи (и leaveChat в панели на таком чате
+	// иначе просто падал бы с ошибкой), true — бот на месте, только притих.
+	gone := u.NewChatMember.Status == "left" ||
+		u.NewChatMember.Status == "kicked" ||
+		(u.NewChatMember.Status == "restricted" && !u.NewChatMember.IsMember)
+
+	if gone {
+		if err := b.SettingsStore.MarkLeft(u.Chat.ID, int64(u.Date)); err != nil {
+			log.Printf("settings.MarkLeft: %v", err)
+		}
+	}
+}
+
 func (b *Bot) RunBot() {
 	bot := b.BotAPI
 
@@ -103,7 +185,12 @@ func (b *Bot) RunBot() {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
+		if update.MyChatMember != nil {
+			b.recordMembership(update.MyChatMember)
+		}
+
 		if update.Message != nil && !update.Message.From.IsBot { // If we got a message
+			b.recordChat(update.Message.Chat, int64(update.Message.Date))
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 			// Find the module that should handle this message
@@ -122,6 +209,9 @@ func (b *Bot) RunBot() {
 
 			for _, moduleName := range b.orderedModules {
 				client := b.Modules[moduleName]
+				// Настройки кладём до shouldIAnswer: модуль решает, отвечать ли,
+				// уже с их учётом — веса живут именно там.
+				payload.Extra["settings"] = b.settingsFor(update.Message.Chat.ID, moduleName)
 				if !b.shouldIAnswer(moduleName, update, client, payload) {
 					continue
 				}
@@ -161,13 +251,25 @@ func (b *Bot) RunBot() {
 	}
 }
 
+// settingsFor собирает настройки модуля для чата: явно выставленные значения
+// поверх дефолтов, которые модуль объявил при регистрации.
+func (b *Bot) settingsFor(chatID int64, moduleName string) map[string]any {
+	return settings.Resolve(
+		b.Registrations[moduleName].Fields,
+		b.Settings.Values(chatID, moduleName),
+	)
+}
+
 func (b *Bot) shouldIAnswer(
 	moduleName string,
 	update tgbotapi.Update,
 	client interface{},
 	payload *botModules.Payload,
 ) bool {
-	if b.BotConfig.Modules[moduleName].EnabledOn != nil && !common.Contains(b.BotConfig.Modules[moduleName].EnabledOn, update.Message.Chat.ID) {
+	if update.Message == nil || update.Message.Chat == nil {
+		return false
+	}
+	if !b.Settings.ModuleEnabled(update.Message.Chat.ID, moduleName) {
 		return false
 	}
 

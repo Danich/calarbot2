@@ -5,29 +5,45 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 type ModuleClient struct {
 	BaseURL string
 }
 
-func (c *ModuleClient) Order() int {
-	url := c.BaseURL + "/order"
-	resp, err := http.Get(url)
+// registerClient — только для Register(). У него, в отличие от клиента
+// IsCalled/Answer, есть таймаут: Register дергают на каждый рендер страницы
+// панели (registry.go держит мьютекс на время вызова), и зависший TCP-коннект
+// к одному модулю не должен вешать всю панель навсегда.
+//
+// IsCalled и Answer таймаута НЕ получают и жить с http.DefaultClient должны и
+// дальше: Answer легитимно ждёт ответ LLM подолгу, и общий таймаут обрезал бы
+// настоящие ответы. Не «упрощайте» это в один клиент на всех.
+var registerClient = &http.Client{Timeout: 5 * time.Second}
+
+// Register спрашивает модуль, кто он и какие у него настройки.
+//
+// Недоступный модуль получает Order 9999 — то же «в конец очереди», что было у
+// Order(), — но теперь вместе с ошибкой: движку есть что записать в лог.
+func (c *ModuleClient) Register() (Registration, error) {
+	fallback := Registration{Order: 9999}
+
+	resp, err := registerClient.Get(c.BaseURL + "/register")
 	if err != nil {
-		return 9999
+		return fallback, fmt.Errorf("register %s: %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
 
-	var result struct {
-		Order int `json:"order"`
+	if resp.StatusCode != http.StatusOK {
+		return fallback, fmt.Errorf("register %s: status %d", c.BaseURL, resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || resp.StatusCode != 200 {
-		fmt.Println("Error decoding order response:", err)
-		return 9999
-	}
-	return result.Order
 
+	var reg Registration
+	if err := json.NewDecoder(resp.Body).Decode(&reg); err != nil {
+		return fallback, fmt.Errorf("decode registration from %s: %w", c.BaseURL, err)
+	}
+	return reg, nil
 }
 
 func (c *ModuleClient) IsCalled(msg *Payload) (bool, error) {

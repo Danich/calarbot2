@@ -22,6 +22,15 @@ def detect_services(files: List[str]) -> Set[str]:
         # BotModule. Без этой ветки он был бы здесь невидим.
         elif file.startswith("notify/"):
             services.add("notify")
+        # admin лежит верхним уровнем по той же причине, что и notify: это не
+        # BotModule, движок его не опрашивает.
+        elif file.startswith("admin/"):
+            services.add("admin")
+        # settings линкуется в движок и в панель. В REBUILD_EVERYTHING он
+        # намеренно не попал: пересобирать из-за него все семь сервисов на
+        # хосте с двумя гигабайтами памяти незачем.
+        elif file.startswith("settings/"):
+            services.update(("engine", "admin"))
         elif file.startswith("modules/"):
             parts = file.split("/")
             if len(parts) > 1:

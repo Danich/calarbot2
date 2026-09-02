@@ -81,40 +81,39 @@ func (s *Store) UpsertConfigPersona(key, name, prompt string) (Persona, PersonaC
 	return p, PersonaPromptOverwritten, nil
 }
 
-func (s *Store) SetChatPersona(chatID, personaID int64) error {
-	_, err := s.db.Exec(
-		`INSERT INTO chat_persona (chat_id, persona_id, set_at) VALUES (?, ?, ?)
-		 ON CONFLICT(chat_id) DO UPDATE SET persona_id = excluded.persona_id, set_at = excluded.set_at`,
-		chatID, personaID, time.Now().Unix(),
-	)
-	return err
-}
-
-// ResolvePersona: явная привязка чата важнее дефолта из конфига. Сегодня
-// chat_persona никто не заполняет, но правило уже действует — админка появится
-// как писатель в эту таблицу и модуль менять не придётся.
-func (s *Store) ResolvePersona(chatID int64, defaultKey string) (Persona, error) {
+// PersonaByKey достаёт персону по ключу.
+//
+// Пришёл на смену ResolvePersona: ключ теперь приезжает в настройках чата от
+// движка, и таблица chat_persona под это больше не нужна.
+func (s *Store) PersonaByKey(key string) (Persona, error) {
 	var p Persona
-	err := s.db.QueryRow(`
-		SELECT p.id, p.key, p.name, p.system_prompt
-		FROM chat_persona cp JOIN personas p ON p.id = cp.persona_id
-		WHERE cp.chat_id = ?`, chatID,
-	).Scan(&p.ID, &p.Key, &p.Name, &p.SystemPrompt)
-	if err == nil {
-		return p, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return Persona{}, fmt.Errorf("select chat persona: %w", err)
-	}
-
-	err = s.db.QueryRow(
-		`SELECT id, key, name, system_prompt FROM personas WHERE key = ?`, defaultKey,
+	err := s.db.QueryRow(
+		`SELECT id, key, name, system_prompt FROM personas WHERE key = ?`, key,
 	).Scan(&p.ID, &p.Key, &p.Name, &p.SystemPrompt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Persona{}, ErrNoPersona
 	}
 	if err != nil {
-		return Persona{}, fmt.Errorf("select default persona: %w", err)
+		return Persona{}, fmt.Errorf("select persona: %w", err)
 	}
 	return p, nil
+}
+
+// ListPersonas отдаёт всё, из чего админка строит выпадашку.
+func (s *Store) ListPersonas() ([]Persona, error) {
+	rows, err := s.db.Query(`SELECT id, key, name, system_prompt FROM personas ORDER BY key`)
+	if err != nil {
+		return nil, fmt.Errorf("select personas: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Persona
+	for rows.Next() {
+		var p Persona
+		if err := rows.Scan(&p.ID, &p.Key, &p.Name, &p.SystemPrompt); err != nil {
+			return nil, fmt.Errorf("scan persona: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

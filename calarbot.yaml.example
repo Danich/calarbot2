@@ -1,5 +1,6 @@
 tgTokenFile: /.tgtoken
 adminId: 0            # telegram user id, куда notify шлёт сообщения
+sqlitePath: /data/calarbot.db
 modules:
   simpleReply:
     url: "http://simpleReply:8080"
@@ -9,3 +10,12 @@ modules:
     url: "http://sber:8080"
   "aiAnswer":
     url: "http://aiAnswer:8080"
+
+# Разовый посев: с чего начинается включённость модулей по чатам. Отрабатывает
+# один раз, дальше правда живёт в базе и правится в админке. enabled_on больше
+# нет — модуль в новом чате всегда выключен, пока его не включат явно.
+seed_chats:
+  - id: -100500
+    title: "болталка"
+    type: supergroup
+    modules: [skazka, aiAnswer]

@@ -83,3 +83,22 @@ services:
     volumes:
       - /opt/calarbot/calarbot.yaml:/calarbot.yaml
       - /opt/calarbot/tokens/.tgtoken:/.tgtoken
+
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    image: calarbot2-admin:latest
+    restart: unless-stopped
+    command: ["./admin"]
+    environment:
+      - ADMIN_PORT=8080
+    volumes:
+      - /opt/calarbot/calarbot.yaml:/calarbot.yaml:ro
+      - /opt/calarbot/tokens/.tgtoken:/.tgtoken:ro
+      - /opt/calarbot/data:/data
+    # Порт закреплён за loopback — это только для локальной проверки на этой
+    # машине. На боевом хосте наружу ничего не публикуется: в тайлнет панель
+    # выводит sidecar. Как это поднято — см. роль calarbot2 в ансибле.
+    ports:
+      - "127.0.0.1:8092:8080"

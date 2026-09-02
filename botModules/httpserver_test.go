@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,18 +17,18 @@ import (
 
 // MockModule implements the BotModule interface for testing
 type MockModule struct {
-	OrderValue   int
-	IsCalledFunc func(*tgbotapi.Message) bool
-	AnswerFunc   func(*Payload) (RichAnswer, error)
+	RegistrationValue Registration
+	IsCalledFunc      func(*Payload) bool
+	AnswerFunc        func(*Payload) (RichAnswer, error)
 }
 
-func (m *MockModule) Order() int {
-	return m.OrderValue
+func (m *MockModule) Register() Registration {
+	return m.RegistrationValue
 }
 
-func (m *MockModule) IsCalled(msg *tgbotapi.Message) bool {
+func (m *MockModule) IsCalled(payload *Payload) bool {
 	if m.IsCalledFunc != nil {
-		return m.IsCalledFunc(msg)
+		return m.IsCalledFunc(payload)
 	}
 	return false
 }
@@ -42,12 +43,12 @@ func (m *MockModule) Answer(payload *Payload) (RichAnswer, error) {
 func TestServeModule(t *testing.T) {
 	// Create a mock module
 	mockModule := &MockModule{
-		OrderValue: 42,
-		IsCalledFunc: func(msg *tgbotapi.Message) bool {
-			if msg == nil {
+		RegistrationValue: Registration{Order: 42},
+		IsCalledFunc: func(payload *Payload) bool {
+			if payload == nil || payload.Msg == nil {
 				return false
 			}
-			return msg.Text == "call me"
+			return payload.Msg.Text == "call me"
 		},
 		AnswerFunc: func(payload *Payload) (RichAnswer, error) {
 			if payload == nil || payload.Msg == nil {
@@ -89,9 +90,9 @@ func TestServeModule(t *testing.T) {
 	// Give the server time to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Test the /order endpoint
-	t.Run("order endpoint", func(t *testing.T) {
-		resp, err := http.Get("http://" + addr + "/order")
+	// Test the /register endpoint
+	t.Run("register endpoint", func(t *testing.T) {
+		resp, err := http.Get("http://" + addr + "/register")
 		if err != nil {
 			t.Fatalf("Failed to make request: %v", err)
 		}
@@ -101,15 +102,13 @@ func TestServeModule(t *testing.T) {
 			t.Errorf("Expected status OK, got %v", resp.Status)
 		}
 
-		var result struct {
-			Order int `json:"order"`
-		}
+		var result Registration
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
-		if result.Order != mockModule.OrderValue {
-			t.Errorf("Expected order %d, got %d", mockModule.OrderValue, result.Order)
+		if result.Order != mockModule.RegistrationValue.Order {
+			t.Errorf("Expected order %d, got %d", mockModule.RegistrationValue.Order, result.Order)
 		}
 	})
 
@@ -238,4 +237,42 @@ func TestServeModule(t *testing.T) {
 			t.Errorf("Expected error %q, got %q", "test error", result.Error)
 		}
 	})
+}
+
+type extraSpy struct {
+	seen map[string]interface{}
+}
+
+func (s *extraSpy) Register() Registration { return Registration{Order: 1} }
+func (s *extraSpy) IsCalled(payload *Payload) bool {
+	s.seen = payload.Extra
+	return true
+}
+func (s *extraSpy) Answer(payload *Payload) (RichAnswer, error) {
+	return RichAnswer{}, nil
+}
+
+// Настройки едут к модулю в Extra, и /is_called обязан их донести: без этого
+// модуль узнаёт свои настройки только в Answer, а решает-то он раньше.
+func TestIsCalledCarriesExtra(t *testing.T) {
+	spy := &extraSpy{}
+	srv, _ := ServeModule(spy, "127.0.0.1:0")
+	defer srv.Close()
+
+	handler := srv.Handler
+	body, _ := json.Marshal(Payload{
+		Msg:   &tgbotapi.Message{Text: "привет"},
+		Extra: map[string]interface{}{"settings": map[string]interface{}{"answer_level": 990.0}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/is_called", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	settings, ok := spy.seen["settings"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("IsCalled saw Extra = %v; want a settings map", spy.seen)
+	}
+	if settings["answer_level"] != 990.0 {
+		t.Errorf("answer_level = %v; want 990", settings["answer_level"])
+	}
 }
