@@ -28,7 +28,7 @@ func TestModuleIsCalled(t *testing.T) {
 	msg := &tgbotapi.Message{
 		Text: "Hello",
 	}
-	if !module.IsCalled(msg) {
+	if !module.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Errorf("Expected IsCalled(msg) to return true")
 	}
 }

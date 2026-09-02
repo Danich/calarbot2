@@ -58,6 +58,6 @@ type Registration struct {
 
 type BotModule interface {
 	Register() Registration
-	IsCalled(msg *tgbotapi.Message) bool
+	IsCalled(payload *Payload) bool
 	Answer(payload *Payload) (RichAnswer, error)
 }

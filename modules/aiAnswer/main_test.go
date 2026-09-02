@@ -7,6 +7,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"calarbot2/botModules"
 	"calarbot2/common"
 	"calarbot2/modules/aiAnswer/store"
 )
@@ -20,7 +21,7 @@ func TestModuleOrder(t *testing.T) {
 
 func TestModuleIsCalledNilMessage(t *testing.T) {
 	m := NewModule(0, AIConfig{BotUsername: "testbot", AnswerLevel: 500})
-	if m.IsCalled(nil) {
+	if m.IsCalled(&botModules.Payload{}) {
 		t.Error("IsCalled(nil) should return false")
 	}
 }
@@ -39,7 +40,7 @@ func TestModuleIsCalledReplyToBot(t *testing.T) {
 			From: &tgbotapi.User{UserName: "testbot"},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with reply to bot should return true")
 	}
 }
@@ -58,7 +59,7 @@ func TestModuleIsCalledMentionBot(t *testing.T) {
 			{Type: "mention", Offset: 6, Length: 8},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with mention should return true")
 	}
 }
@@ -78,7 +79,7 @@ func TestModuleIsCalledDirectReplyAlwaysTrue(t *testing.T) {
 			From: &tgbotapi.User{UserName: "testbot"},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with direct reply to bot should always return true")
 	}
 }
@@ -98,7 +99,7 @@ func TestModuleIsCalledDirectMentionAlwaysTrue(t *testing.T) {
 			{Type: "mention", Offset: 6, Length: 8},
 		},
 	}
-	if !m.IsCalled(msg) {
+	if !m.IsCalled(&botModules.Payload{Msg: msg}) {
 		t.Error("IsCalled with @mention should always return true (direct address)")
 	}
 }

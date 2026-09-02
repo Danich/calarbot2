@@ -197,7 +197,8 @@ func (m *Module) Register() botModules.Registration {
 	}
 }
 
-func (m *Module) IsCalled(msg *tgbotapi.Message) bool {
+func (m *Module) IsCalled(payload *botModules.Payload) bool {
+	msg := payload.Msg
 	if msg == nil {
 		return false
 	}

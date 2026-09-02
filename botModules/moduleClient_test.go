@@ -279,7 +279,7 @@ func TestModuleClientAnswer(t *testing.T) {
 type photoModule struct{ img []byte }
 
 func (m photoModule) Register() Registration              { return Registration{Order: 1} }
-func (m photoModule) IsCalled(*tgbotapi.Message) bool     { return true }
+func (m photoModule) IsCalled(*Payload) bool              { return true }
 func (m photoModule) Answer(*Payload) (RichAnswer, error) { return RichAnswer{Photo: m.img}, nil }
 
 // Байты картинки едут от модуля к движку через JSON, и это единственное место,

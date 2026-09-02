@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-
 	"calarbot2/botModules"
 )
 
@@ -20,7 +18,7 @@ func (m Module) Register() botModules.Registration {
 		Description: "Отвечает «тыква», когда не сработал никто другой",
 	}
 }
-func (m Module) IsCalled(_ *tgbotapi.Message) bool { return true }
+func (m Module) IsCalled(_ *botModules.Payload) bool { return true }
 func (m Module) Answer(msg *botModules.Payload) (botModules.RichAnswer, error) {
 	return botModules.RichAnswer{Text: msg.Msg.Text}, nil
 }

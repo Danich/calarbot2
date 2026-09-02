@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 // MockModule implements the BotModule interface for testing
 type MockModule struct {
 	RegistrationValue Registration
-	IsCalledFunc      func(*tgbotapi.Message) bool
+	IsCalledFunc      func(*Payload) bool
 	AnswerFunc        func(*Payload) (RichAnswer, error)
 }
 
@@ -25,9 +26,9 @@ func (m *MockModule) Register() Registration {
 	return m.RegistrationValue
 }
 
-func (m *MockModule) IsCalled(msg *tgbotapi.Message) bool {
+func (m *MockModule) IsCalled(payload *Payload) bool {
 	if m.IsCalledFunc != nil {
-		return m.IsCalledFunc(msg)
+		return m.IsCalledFunc(payload)
 	}
 	return false
 }
@@ -43,11 +44,11 @@ func TestServeModule(t *testing.T) {
 	// Create a mock module
 	mockModule := &MockModule{
 		RegistrationValue: Registration{Order: 42},
-		IsCalledFunc: func(msg *tgbotapi.Message) bool {
-			if msg == nil {
+		IsCalledFunc: func(payload *Payload) bool {
+			if payload == nil || payload.Msg == nil {
 				return false
 			}
-			return msg.Text == "call me"
+			return payload.Msg.Text == "call me"
 		},
 		AnswerFunc: func(payload *Payload) (RichAnswer, error) {
 			if payload == nil || payload.Msg == nil {
@@ -236,4 +237,42 @@ func TestServeModule(t *testing.T) {
 			t.Errorf("Expected error %q, got %q", "test error", result.Error)
 		}
 	})
+}
+
+type extraSpy struct {
+	seen map[string]interface{}
+}
+
+func (s *extraSpy) Register() Registration { return Registration{Order: 1} }
+func (s *extraSpy) IsCalled(payload *Payload) bool {
+	s.seen = payload.Extra
+	return true
+}
+func (s *extraSpy) Answer(payload *Payload) (RichAnswer, error) {
+	return RichAnswer{}, nil
+}
+
+// Настройки едут к модулю в Extra, и /is_called обязан их донести: без этого
+// модуль узнаёт свои настройки только в Answer, а решает-то он раньше.
+func TestIsCalledCarriesExtra(t *testing.T) {
+	spy := &extraSpy{}
+	srv, _ := ServeModule(spy, "127.0.0.1:0")
+	defer srv.Close()
+
+	handler := srv.Handler
+	body, _ := json.Marshal(Payload{
+		Msg:   &tgbotapi.Message{Text: "привет"},
+		Extra: map[string]interface{}{"settings": map[string]interface{}{"answer_level": 990.0}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/is_called", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	settings, ok := spy.seen["settings"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("IsCalled saw Extra = %v; want a settings map", spy.seen)
+	}
+	if settings["answer_level"] != 990.0 {
+		t.Errorf("answer_level = %v; want 990", settings["answer_level"])
+	}
 }

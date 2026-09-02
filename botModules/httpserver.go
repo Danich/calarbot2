@@ -66,7 +66,7 @@ func isCalledAction(module BotModule) func(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			fmt.Printf("error decoding payload: %v", err)
 		}
-		result := module.IsCalled(payload.Msg)
+		result := module.IsCalled(&payload)
 		err = json.NewEncoder(w).Encode(map[string]bool{"called": result})
 		if err != nil {
 			fmt.Printf("error encoding response: %v", err)

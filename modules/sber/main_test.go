@@ -5,6 +5,7 @@ package main
 import (
 	"testing"
 
+	"calarbot2/botModules"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -57,7 +58,7 @@ func TestModuleIsCalled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := module.IsCalled(tt.message)
+			result := module.IsCalled(&botModules.Payload{Msg: tt.message})
 			if result != tt.expected {
 				t.Errorf("IsCalled() = %v, want %v", result, tt.expected)
 			}

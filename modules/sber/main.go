@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-
 	"calarbot2/botModules"
 )
 
@@ -30,7 +28,8 @@ func (m Module) Register() botModules.Registration {
 }
 
 // IsCalled checks if this module should handle the message
-func (m Module) IsCalled(msg *tgbotapi.Message) bool {
+func (m Module) IsCalled(payload *botModules.Payload) bool {
+	msg := payload.Msg
 	if msg == nil || msg.Text == "" {
 		return false
 	}
